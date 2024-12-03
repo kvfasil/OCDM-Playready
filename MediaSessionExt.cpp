@@ -99,7 +99,9 @@ DRM_RESULT opencdm_output_levels_callback(
         callbackInfo->_callback = const_cast<IMediaKeySessionCallback *>(constSessionCallback);
 
         // Pull out the protection levels.
-        const DRM_PLAY_OPL_EX* playLevels = static_cast<const DRM_PLAY_OPL_EX*>(outputLevels);
+        // const DRM_PLAY_OPL_EX* playLevels = static_cast<const DRM_PLAY_OPL_EX*>(outputLevels);
+
+        const DRM_PLAY_OPL_EX2* playLevels = static_cast<const DRM_PLAY_OPL_EX2*>(outputLevels);    
         callbackInfo->_compressedVideo = playLevels->minOPL.wCompressedDigitalVideo;
         callbackInfo->_uncompressedVideo = playLevels->minOPL.wUncompressedDigitalVideo;
         callbackInfo->_analogVideo = playLevels->minOPL.wAnalogVideo;
@@ -223,8 +225,9 @@ CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint3
     // response. There is always only a single BID per server response.
 
     // BID
-    mBatchId = mLicenseResponse->get()->m_oBatchID; 
-    PrintBase64(sizeof(mBatchId.rgb), mBatchId.rgb, "BatchId/SecureStopId");
+
+    // mBatchId = mLicenseResponse->get()->m_oBatchID; 
+    // PrintBase64(sizeof(mBatchId.rgb), mBatchId.rgb, "BatchId/SecureStopId");
 
     // Microsoft says that a batch ID of all zeros indicates some sort of error
     // for in-memory licenses. Hopefully this error was already caught above.

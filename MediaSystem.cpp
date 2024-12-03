@@ -45,14 +45,6 @@ const uint32_t NONCE_STORE_SIZE = 100;
 
 Core::CriticalSection drmAppContextMutex_;
 
-static DRM_WCHAR* createDrmWchar(std::string const& s) {
-    DRM_WCHAR* w = new DRM_WCHAR[s.length() + 1];
-    for (size_t i = 0; i < s.length(); ++i)
-        w[i] = DRM_ONE_WCHAR(s[i], '\0');
-    w[s.length()] = DRM_ONE_WCHAR('\0', '\0');
-    return w;
-}
-
 bool calcFileSha256 (const std::string& filePath, uint8_t hash[], uint32_t hashLength )
 {
     bool result(false); 
@@ -98,6 +90,28 @@ static void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch) {
 }
 
 namespace CDMi {
+
+static DRM_WCHAR* createDrmWchar(std::string const& s) {
+    DRM_WCHAR* w = new DRM_WCHAR[s.length() + 1];
+    for (size_t i = 0; i < s.length(); ++i)
+        w[i] = DRM_ONE_WCHAR(s[i], '\0');
+    w[s.length()] = DRM_ONE_WCHAR('\0', '\0');
+    return w;
+}
+
+static void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch) {
+    DRM_DWORD ich = 0;
+
+    if( f_pPackedString == nullptr
+     || f_cch == 0 )
+    {
+        return;
+    }
+    for( ich = 1; ich <= f_cch; ich++ )
+    {
+        f_pPackedString[f_cch - ich] = ((DRM_BYTE*)f_pPackedString)[ f_cch - ich ];
+    }
+}
 
 class PlayReady : public IMediaKeys, public IMediaKeysExt {
 private:
@@ -161,6 +175,10 @@ public:
         }
  
         return CDMi_SUCCESS; 
+    }
+
+    virtual CDMi_RESULT GetMetrics(std::string& metrics) {
+        return CDMi_S_FALSE;
     }
 
     CDMi_RESULT SetServerCertificate(
