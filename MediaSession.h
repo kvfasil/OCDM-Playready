@@ -47,6 +47,24 @@
 
 namespace CDMi {
 
+#define CHECK_EXACT(call, value, label) \
+    if ((call) != value) \
+    { \
+        goto label; \
+    }
+typedef uint32_t secmem_handle_t;
+struct Sec_OpaqueBufferHandle_struct
+{
+    secmem_handle_t secmem_handle;
+    uint32_t dataBufSize;
+};
+typedef struct Sec_OpaqueBufferHandle_struct Sec_OpaqueBufferHandle;
+
+DRM_WCHAR* createDrmWchar(std::string const& s);
+void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch);
+std::string GetDrmStorePath();
+
+
 struct PlayLevels {
     uint16_t compressedDigitalVideoLevel_;   //!< Compressed digital video output protection level.
     uint16_t uncompressedDigitalVideoLevel_; //!< Uncompressed digital video output protection level.
@@ -104,6 +122,8 @@ public:
     const uint8_t *f_pbKeyMessageResponse,
     uint32_t f_cbKeyMessageResponse);
 
+    virtual void SetParameter(const uint8_t * data, const uint32_t length);
+
     virtual CDMi_RESULT Remove();
 
     virtual CDMi_RESULT Close(void);
@@ -125,6 +145,15 @@ public:
     const uint8_t* keyId,
     bool initWithLast15) override;
 
+
+    // virtual CDMi_RESULT Decrypt(
+    // uint8_t*                 inData,
+    // const uint32_t           inDataLength,
+    // uint8_t**                outData,
+    // uint32_t*                outDataLength,
+    // const SampleInfo*        sampleInfo,
+    // const IStreamProperties* properties);    
+
     virtual CDMi_RESULT ReleaseClearContent(
     const uint8_t *f_pbSessionKey,
     uint32_t f_cbSessionKey,
@@ -141,6 +170,20 @@ public:
     virtual CDMi_RESULT SelectKeyId(const uint8_t keyLength, const uint8_t keyId[]) override;
 
 private:
+    inline void ToggleKeyIdFormat(const uint8_t keyLength, uint8_t keyId[])
+    {
+        ASSERT(keyLength > 8);
+        // Converting the KID format between the standard and PlayReady formats
+        // consists of switching endian on bytes 0-3, 4-5, and 6-7.
+        std::swap(keyId[0], keyId[3]);
+        std::swap(keyId[1], keyId[2]);
+        std::swap(keyId[4], keyId[5]);
+        std::swap(keyId[6], keyId[7]);
+    }
+    CDMi_RESULT SetKeyId(DRM_APP_CONTEXT *pDrmAppCtx, const uint8_t keyLength, const uint8_t keyId[]);
+    CDMi_RESULT SelectDrmHeader(DRM_APP_CONTEXT *pDrmAppCtx, const uint32_t headerLength, const uint8_t header[]);
+    CDMi_RESULT SetOutputMode(DRM_APP_CONTEXT *pDrmAppCtx, DRM_DWORD dwDecryptionMode);
+
 
 
     static DRM_RESULT DRM_CALL _PolicyCallback(const DRM_VOID *, DRM_POLICY_CALLBACK_TYPE f_dwCallbackType, 
@@ -179,12 +222,19 @@ private:
     PlayLevels levels_;
     bool mInitiateChallengeGeneration;
     DRM_ID mBatchId;
+    void* m_pSVPContext;
+    unsigned int m_rpcID;
+
 
 protected:
     DRM_BOOL m_fCommit;
     DRM_APP_CONTEXT *m_poAppContext;
     DRM_DECRYPT_CONTEXT *m_oDecryptContext;
     bool m_decryptInited;
+    static void *sess;
+    static uint32_t m_secCount;
+    DRM_DECRYPT_CONTEXT *m_oDecryptContext2;
+
 };
 
 } // namespace CDMi
