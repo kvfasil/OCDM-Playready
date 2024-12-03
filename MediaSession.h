@@ -36,6 +36,8 @@
 #include <drmerror.h>
 #include <drmversionconstants.h>
 
+ #define PR_4_4
+
 #undef __in
 #undef __out
 
@@ -146,13 +148,13 @@ public:
     bool initWithLast15) override;
 
 
-    // virtual CDMi_RESULT Decrypt(
-    // uint8_t*                 inData,
-    // const uint32_t           inDataLength,
-    // uint8_t**                outData,
-    // uint32_t*                outDataLength,
-    // const SampleInfo*        sampleInfo,
-    // const IStreamProperties* properties);    
+    virtual CDMi_RESULT Decrypt(
+    uint8_t*                 inData,
+    const uint32_t           inDataLength,
+    uint8_t**                outData,
+    uint32_t*                outDataLength,
+    const SampleInfo*        sampleInfo,
+    const IStreamProperties* properties);    
 
     virtual CDMi_RESULT ReleaseClearContent(
     const uint8_t *f_pbSessionKey,
@@ -168,6 +170,8 @@ public:
     virtual CDMi_RESULT StoreLicenseData(const uint8_t licenseData[], uint32_t licenseDataSize, unsigned char * secureStopId) override;
     virtual CDMi_RESULT CleanDecryptContext() override;
     virtual CDMi_RESULT SelectKeyId(const uint8_t keyLength, const uint8_t keyId[]) override;
+
+    CDMi_RESULT SecOpaqueBuffer_Malloc(uint32_t bufLength, Sec_OpaqueBufferHandle **handle);
 
 private:
     inline void ToggleKeyIdFormat(const uint8_t keyLength, uint8_t keyId[])
