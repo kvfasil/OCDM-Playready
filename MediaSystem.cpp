@@ -45,6 +45,30 @@ extern DRM_CONST_STRING g_dstrDrmPath;
 
 WPEFramework::Core::CriticalSection drmAppContextMutex_;
 
+// static DRM_WCHAR* createDrmWchar(std::string const& s) {
+//     DRM_WCHAR* w = new DRM_WCHAR[s.length() + 1];
+//     for (size_t i = 0; i < s.length(); ++i)
+//         w[i] = ONE_WCHAR(s[i], '\0');
+//     w[s.length()] = ONE_WCHAR('\0', '\0');
+//     return w;
+// }
+
+// static void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch) {
+//     DRM_DWORD ich = 0;
+
+//     if( f_pPackedString == nullptr
+//      || f_cch == 0 )
+//     {
+//         return;
+//     }
+//     for( ich = 1; ich <= f_cch; ich++ )
+//     {
+//         f_pPackedString[f_cch - ich] = ((DRM_BYTE*)f_pPackedString)[ f_cch - ich ];
+//     }
+// }
+
+namespace CDMi {
+
 static DRM_WCHAR* createDrmWchar(std::string const& s) {
     DRM_WCHAR* w = new DRM_WCHAR[s.length() + 1];
     for (size_t i = 0; i < s.length(); ++i)
@@ -66,8 +90,6 @@ static void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch) {
         f_pPackedString[f_cch - ich] = ((DRM_BYTE*)f_pPackedString)[ f_cch - ich ];
     }
 }
-
-namespace CDMi {
 
 class PlayReady : public IMediaKeys, public IMediaKeysExt {
 private:
@@ -169,6 +191,10 @@ public:
 
         m_cbPublisherCert = f_cbPublisherCert;
         return CDMi_SUCCESS;
+    }
+
+    virtual CDMi_RESULT GetMetrics(std::string& metrics){
+        return CDMi_S_FALSE;
     }
 
     CDMi_RESULT SetServerCertificate( const uint8_t *f_pbServerCertificate, uint32_t f_cbServerCertificate)

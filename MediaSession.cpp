@@ -27,16 +27,16 @@
 #ifdef USE_SVP
 #include "gst_svp_meta.h"
 
-typedef struct Sec_OpaqueBufferHandle_struct
-{
-    uint32_t dataBufSize;
-    //TEEC_Session *sess;
-    uint32_t align;
-    int ion_fd;
-    int map_fd;
-    //TEEC_SharedMemory register_shm;
-    void *rtkmem_handle;
-} Sec_OpaqueBufferHandle;
+// typedef struct Sec_OpaqueBufferHandle_struct
+// {
+//     uint32_t dataBufSize;
+//     //TEEC_Session *sess;
+//     uint32_t align;
+//     int ion_fd;
+//     int map_fd;
+//     //TEEC_SharedMemory register_shm;
+//     void *rtkmem_handle;
+// } Sec_OpaqueBufferHandle;
 
 typedef struct SecureBufferInfo_struct
 {
