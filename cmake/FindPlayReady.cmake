@@ -47,6 +47,18 @@ if(PC_PLAYREADY_FOUND)
         set(PLAYREADY_LIBRARIES ${PC_PLAYREADY_LIBRARIES})
         set(PLAYREADY_LIBRARY_DIRS ${PC_PLAYREADY_LIBRARY_DIRS})
     endif()
+
+    if(PC_PLAYREADY_FOUND)
+        find_path (PLAYREADY_INCLUDE NAME "drmmanager.h" PATHS "usr/include/" PATH_SUFFIXES "playready")
+        # Define the path to be removed
+        set(PLAYREADY_LIBRARY_REMOVE_DIRS
+            "${PLAYREADY_INCLUDE}/inc"
+            "${PLAYREADY_INCLUDE}/results"
+            )
+        list(REMOVE_ITEM PLAYREADY_INCLUDE_DIRS ${PLAYREADY_LIBRARY_REMOVE_DIRS})
+        # message(STATUS "Updated PLAYREADY_LIBRARY_DIRS: ${PLAYREADY_INCLUDE_DIRS}")
+    endif()
+
 endif()
 
 include(FindPackageHandleStandardArgs)
