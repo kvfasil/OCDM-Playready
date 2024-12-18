@@ -737,6 +737,7 @@ public:
 
     void Initialize(const WPEFramework::PluginHost::IShell * service, const std::string& configline)
     {
+	fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
         OnSystemConfigurationAvailable(configline);
     }
 
@@ -760,6 +761,6 @@ static SystemFactoryType<PlayReady> g_instance({"video/x-h264", "audio/mpeg"});
 }  // namespace CDMi
 
 CDMi::ISystemFactory* GetSystemFactory() {
-
+    fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
     return (&CDMi::g_instance); 
 }

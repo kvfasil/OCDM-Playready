@@ -24,7 +24,7 @@ endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
-set(DRM_PLUGIN_NAME "PlayReady")
+set(DRM_PLUGIN_NAME "Playready")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -w -Wno-psabi ")
 
@@ -56,7 +56,8 @@ if(PLAYREADY_FOUND)
     message(STATUS "PlayReady found!")
     # message(STATUS "${PLAYREADY_INCLUDE_DIRS}")
     include_directories(${PLAYREADY_INCLUDE_DIRS})
-    target_link_libraries(${DRM_PLUGIN_NAME} PlayReady::PlayReady)
+    include_directories(${PLAYREADY_LIBRARIES})
+    target_link_libraries(${DRM_PLUGIN_NAME} playready-4.4)
 else()
     message(FATAL_ERROR "PlayReady not found. Please install the required libraries.")
 endif()
