@@ -34,6 +34,9 @@ else()
    set(STAGING_DIR "${CMAKE_FIND_ROOT_PATH}")
 endif()
 
+add_definitions(-DAML_SVP_PR)
+add_definitions(-DPR_4_4)
+
 file(GLOB DRM_PLUGIN_INCLUDES *.h)
 
 set(DRM_PLUGIN_LIBS 
