@@ -14,18 +14,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#pragma once
 
-#include <drmbuild_oem.h>
+#pragma once
+//#include <core/core.h>
+#include <drmbuild_linux.h>
+
 #include <drmmanager.h>
 #include <drmmathsafe.h>
 #include <drmtypes.h>
 #include <drmerr.h>
 #include <drmerror.h>
-#include <drmversionconstants.h>
-#include <drmbytemanip.h>
+#include <drmbuild_oem.h>
 #include <drmmanagertypes.h>
 #include <drmconstants.h>
+
+#include <drmversionconstants.h>
+#include <drmbytemanip.h>
+#include <playready_ca.h>
+
 #undef min
 #undef max
 #undef __in
@@ -35,12 +41,35 @@
 #include <vector>
 #include <utility>
 #include <memory>
-#include <cdmi.h>
-#include <core/Sync.h>
+//#include <cdmi.h>
+
+#ifndef MODULE_NAME
+#define MODULE_NAME Playready
+#endif
 
 #ifndef SIZEOF
 #define SIZEOF sizeof
+#include <drmcrt.h>
+#else
+#include <drmcommon.h>
 #endif
+
+#include <core/Sync.h>
+#include <interfaces/IDRM.h>
+
+
+#ifdef USE_SYSTEMD_JOURNAL_PRINT
+#include <systemd/sd-journal.h>
+#else
+#include <syslog.h>
+#endif
+
+#ifdef USE_SYSTEMD_JOURNAL_PRINT
+#define ocdm_log(fmt,args...) sd_journal_print(LOG_NOTICE, "[OCDM][Playready]" fmt, ##args)
+#else
+#define ocdm_log(fmt,args...) syslog(LOG_NOTICE, "[OCDM][Playready][sys]" fmt, ##args)
+#endif
+
 
 #ifdef DRM_ONE_CHAR
 #define ONE_CHAR DRM_ONE_CHAR
@@ -134,6 +163,7 @@ typedef std::shared_ptr<__DECRYPT_CONTEXT> DECRYPT_CONTEXT;
 #define NEW_DECRYPT_CONTEXT() std::make_shared<__DECRYPT_CONTEXT>()
 
 //////////////////////////////////////////////////////////////////
+/*
 class SafeCriticalSection
 {
 public:
@@ -169,8 +199,27 @@ private:
     WPEFramework::Core::CriticalSection& mLock;
     bool mLocked;
 };
+*/
+
+///////////////////////////////////////////////////////////
 
 namespace CDMi {
+#define CHECK_EXACT(call, value, label) \
+    if ((call) != value) \
+    { \
+        goto label; \
+    }
+typedef uint32_t secmem_handle_t;
+struct Sec_OpaqueBufferHandle_struct
+{
+    secmem_handle_t secmem_handle;
+    uint32_t dataBufSize;
+};
+typedef struct Sec_OpaqueBufferHandle_struct Sec_OpaqueBufferHandle;
+
+DRM_WCHAR* createDrmWchar(std::string const& s);
+void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch);
+std::string GetDrmStorePath();
 
 struct PlayreadyOutProtLevels
 {
@@ -181,11 +230,21 @@ struct PlayreadyOutProtLevels
 
 
 struct PlayLevels {
-    uint16_t compressedDigitalVideoLevel_;
-    uint16_t uncompressedDigitalVideoLevel_;
-    uint16_t analogVideoLevel_;
-    uint16_t compressedDigitalAudioLevel_;
-    uint16_t uncompressedDigitalAudioLevel_;
+    uint16_t compressedDigitalVideoLevel_;   //!< Compressed digital video output protection level.
+    uint16_t uncompressedDigitalVideoLevel_; //!< Uncompressed digital video output protection level.
+    uint16_t analogVideoLevel_;              //!< Analog video output protection level.
+    uint16_t compressedDigitalAudioLevel_;   //!< Compressed digital audio output protection level.
+    uint16_t uncompressedDigitalAudioLevel_; //!< Uncompressed digital audio output protection level.
+};
+
+class LicenseResponse {
+public:
+    LicenseResponse() : dlr(new DRM_LICENSE_RESPONSE) {}
+    ~LicenseResponse() { delete dlr; }
+    DRM_LICENSE_RESPONSE * get() { return dlr; }
+    void clear() { memset(dlr, 0, sizeof(DRM_LICENSE_RESPONSE)); }
+private:
+    DRM_LICENSE_RESPONSE * const dlr;
 };
 
 class PlayreadySession
@@ -206,7 +265,7 @@ protected:
     bool m_bInitCalled;
 };
 
-class MediaKeySession : public PlayreadySession , public IMediaKeySession , public IMediaKeySessionExt {
+class MediaKeySession : public IMediaKeySession, public IMediaKeySessionExt {
 private:
     enum KeyState {
         // Has been initialized.
@@ -227,11 +286,11 @@ private:
         IndividualizationRequest = 3
     };
 public:
-
-    MediaKeySession(
-            const uint8_t drmHeader[],
-            uint32_t drmHeaderLength,
-            DRM_APP_CONTEXT * poAppContext, bool initiateChallengeGeneration = false);
+    //static const std::vector<std::string> m_mimeTypes;
+    // MediaKeySession(
+    //         const uint8_t drmHeader[],
+    //         uint32_t drmHeaderLength,
+    //         DRM_APP_CONTEXT * poAppContext, bool initiateChallengeGeneration = false);
 
     MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_APP_CONTEXT * poAppContext, bool initiateChallengeGeneration = false);
     ~MediaKeySession();
@@ -239,6 +298,7 @@ public:
     bool playreadyGenerateKeyRequest();
     bool ready() const { return m_eKeyState == KEY_READY; }
 
+    // MediaKeySession overrides
     virtual void Run(
     const IMediaKeySessionCallback *f_piMediaKeySessionCallback);
 
@@ -251,11 +311,40 @@ public:
     virtual CDMi_RESULT Remove();
 
     virtual CDMi_RESULT Close(void);
-    virtual CDMi_RESULT PlaybackStopped(void);
 
-    virtual CDMi_RESULT SetParameter(const std::string& name, const std::string& value);
+    virtual void SetParameter(const uint8_t * data, const uint32_t length);
     virtual const char *GetSessionId(void) const;
     virtual const char *GetKeySystem(void) const;
+//////////////////////  Decrypt  ///////////////////////////////////
+#ifdef AML_SVP_PR
+
+    virtual CDMi_RESULT Decrypt(
+    const uint8_t *f_pbSessionKey,
+    uint32_t f_cbSessionKey,
+    const EncryptionScheme encryptionScheme,
+    const EncryptionPattern& pattern,    
+    const uint8_t *f_pbIV,
+    uint32_t f_cbIV,
+    const uint8_t *f_pbData,
+    uint32_t f_cbData,
+    uint32_t *f_pcbOpaqueClearContent,
+    uint8_t **f_ppbOpaqueClearContent,
+    const uint8_t keyIdLength,
+    const uint8_t* keyId,
+    bool initWithLast15) {
+
+        return (CDMi_METHOD_NOT_IMPLEMENTED);
+    }
+    virtual CDMi_RESULT Decrypt(
+    uint8_t*                 inData,
+    const uint32_t           inDataLength,
+    uint8_t**                outData,
+    uint32_t*                outDataLength,
+    const SampleInfo*        sampleInfo,
+    const IStreamProperties* properties);    
+
+/////////////////////////////////////////////////////////////////////
+#else
 
     virtual CDMi_RESULT MediaKeySession::Decrypt(
         uint8_t*                 inData,
@@ -343,6 +432,9 @@ public:
     bool initWithLast15);
 #endif
 
+#endif
+//////////////////////  Decrypt  ///////////////////////////////////    
+
     virtual CDMi_RESULT ReleaseClearContent(
     const uint8_t *f_pbSessionKey,
     uint32_t f_cbSessionKey,
@@ -350,43 +442,49 @@ public:
     uint8_t  *f_pbClearContentOpaque );
 
     static DRM_BOOL m_bPrintOPLError;
+    uint32_t GetSessionIdExt(void) const override;
 
-    uint32_t GetSessionIdExt(void) const;
-
-    virtual CDMi_RESULT SetDrmHeader(const uint8_t drmHeader[], uint32_t drmHeaderLength);
-    virtual CDMi_RESULT GetChallengeDataExt(uint8_t * challenge, uint32_t & challengeSize, uint32_t isLDL);
-    virtual CDMi_RESULT CancelChallengeDataExt();
-    virtual CDMi_RESULT StoreLicenseData(const uint8_t licenseData[], uint32_t licenseDataSize, unsigned char * secureStopId);
-    virtual CDMi_RESULT SelectKeyId(const uint8_t keyLength, const uint8_t keyId[]);
-    virtual CDMi_RESULT CleanDecryptContext();
-    
-    
+    virtual CDMi_RESULT SetDrmHeader(const uint8_t drmHeader[], uint32_t drmHeaderLength) override;
+    virtual CDMi_RESULT GetChallengeDataExt(uint8_t * challenge, uint32_t & challengeSize, uint32_t isLDL) override;
+    virtual CDMi_RESULT CancelChallengeDataExt() override;
+    virtual CDMi_RESULT StoreLicenseData(const uint8_t licenseData[], uint32_t licenseDataSize, unsigned char * secureStopId) override;
+    virtual CDMi_RESULT SelectKeyId(const uint8_t keyLength, const uint8_t keyId[]) override;
+    virtual CDMi_RESULT CleanDecryptContext() override;
 
 private:
-    std::vector< DECRYPT_CONTEXT > m_DecryptContextVector;
+    CDMi_RESULT SetKeyId(DRM_APP_CONTEXT *pDrmAppCtx, const uint8_t keyLength, const uint8_t keyId[]);
+    CDMi_RESULT SelectDrmHeader(DRM_APP_CONTEXT *pDrmAppCtx, const uint32_t headerLength, const uint8_t header[]);
+    CDMi_RESULT SetOutputMode(DRM_APP_CONTEXT *pDrmAppCtx, DRM_DWORD dwDecryptionMode);
 
-    static bool mMaxResDecodeSet;
-    static uint64_t mMaxResDecodePixels;
+    // std::vector< DECRYPT_CONTEXT > m_DecryptContextVector;
 
-    virtual CDMi_RESULT DRM_DecryptFailure(DRM_RESULT dr, const uint8_t *payloadData, uint32_t *f_pcbOpaqueClearContent, uint8_t **f_ppbOpaqueClearContent);
+    // static bool mMaxResDecodeSet;
+    // static uint64_t mMaxResDecodePixels;
 
-    struct PlayreadyOutProtLevels m_playreadyLevels;
+    // virtual CDMi_RESULT DRM_DecryptFailure(DRM_RESULT dr, const uint8_t *payloadData, uint32_t *f_pcbOpaqueClearContent, uint8_t **f_ppbOpaqueClearContent);
 
-    static DRM_RESULT DRM_CALL _PolicyCallback(const DRM_VOID *,
-            DRM_POLICY_CALLBACK_TYPE f_dwCallbackType, const DRM_KID *,
-            const DRM_LID *, const DRM_VOID *);
+    // struct PlayreadyOutProtLevels m_playreadyLevels;
 
- 
+    static DRM_RESULT DRM_CALL _PolicyCallback(const DRM_VOID *, DRM_POLICY_CALLBACK_TYPE f_dwCallbackType,
+        const DRM_KID *, const DRM_LID *, const DRM_VOID *);
+
+    DRM_BYTE *m_pbOpaqueBuffer;
+    DRM_DWORD m_cbOpaqueBuffer;
+
     DRM_BYTE *m_pbRevocationBuffer;
     KeyState m_eKeyState;
     DRM_CHAR m_rgchSessionID[CCH_BASE64_EQUIV(SIZEOF(DRM_ID)) + 1];
-      
+
     DRM_BYTE *m_pbChallenge;
     DRM_DWORD m_cbChallenge;
-    DRM_CHAR *m_pchSilentURL;  
+    DRM_CHAR *m_pchSilentURL;
     std::string m_customData;
     IMediaKeySessionCallback *m_piCallback;
 
+private:
+    std::unique_ptr<LicenseResponse> mLicenseResponse;
+    std::vector<uint8_t> mSecureStopId;
+    std::vector<uint8_t> mNounce;
     std::vector<uint8_t> mDrmHeader;
     uint32_t mSessionId;
     PlayLevels levels_;
@@ -397,10 +495,8 @@ private:
     DRM_ID m_oBatchID;
     std::vector<std::pair<DRM_ID, DRM_ID>> m_oPersistentLicenses;
     DECRYPT_CONTEXT m_currentDecryptContext;
-#ifdef USE_SVP
     void* m_pSVPContext;
     unsigned int m_rpcID;
-#endif
     CDMi_RESULT PersistentLicenseCheck();
     DRM_RESULT ProcessLicenseResponse(
                             DRM_PROCESS_LIC_RESPONSE_FLAG    f_eResponseFlag,
@@ -427,13 +523,18 @@ private:
     void SaveTemporaryPersistentLicenses(const DRM_LICENSE_RESPONSE* f_poLicenseResponse);
     void DeleteTemporaryPersistentLicenses();
     const char* printGuid(KeyId &keyId);
-    const char* printUuid(KeyId &keyId);    
+    const char* printUuid(KeyId &keyId);
 
 protected:
     DRM_BOOL m_fCommit;
     DRM_APP_CONTEXT *m_poAppContext;
     bool m_decryptInited;
     bool m_bDRMInitializedLocally;
+
+    static void *sess;
+    static uint32_t m_secCount;
+    DRM_DECRYPT_CONTEXT *m_oDecryptContext;
+    DRM_DECRYPT_CONTEXT *m_oDecryptContext2;
 };
 
 class CPRDrmPlatform
