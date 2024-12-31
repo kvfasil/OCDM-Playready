@@ -41,11 +41,10 @@ using namespace std;
 using namespace WPEFramework;
 extern DRM_CONST_STRING g_dstrDrmPath;
 
-using SafeCriticalSection = Core::SafeSyncType<Core::CriticalSection>;
+using SafeCriticalSection = WPEFramework::Core::SafeSyncType<WPEFramework::Core::CriticalSection>;
 
-Core::CriticalSection drmAppContextMutex_;
-DRM_CONST_STRING g_dstrCDMDrmStoreName;
-
+WPEFramework::Core::CriticalSection drmAppContextMutex_;
+extern DRM_CONST_STRING g_dstrDrmPath;
 
 namespace CDMi {
 
