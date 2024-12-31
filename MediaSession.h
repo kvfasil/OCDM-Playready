@@ -217,8 +217,8 @@ struct Sec_OpaqueBufferHandle_struct
 };
 typedef struct Sec_OpaqueBufferHandle_struct Sec_OpaqueBufferHandle;
 
-DRM_WCHAR* createDrmWchar(std::string const& s);
-void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch);
+// DRM_WCHAR* createDrmWchar(std::string const& s);
+// void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch);
 std::string GetDrmStorePath();
 
 struct PlayreadyOutProtLevels

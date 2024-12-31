@@ -15,20 +15,28 @@
  * limitations under the License.
  */
 #include "MediaSession.h"
-#include <plugins/plugins.h>
-//#include <cdmi.h>
-#include <interfaces/IDRM.h>
-
-
 
 #include <memory>
 #include <vector>
 #include <iostream>
 #include <string.h>
+#include <sys/stat.h>
+#include <openssl/sha.h>
+#include <iomanip>
 
-// <plugins/plugins.h> has its own TRACING mechanism. We do not want to use those, undefine it here to avoid a warning.
-// with the TRACE macro of the PLAYREADY software.
-#undef TRACE
+#ifdef AML_SVP_PR
+#include <interfaces/IDRM.h>
+#else
+#include <cdmi.h>
+#endif
+
+#include <core/core.h>
+#include <drmint64.h>
+#include <plugins/plugins.h>
+
+#define CLEAN_ON_INIT 1
+
+#define DEVICESTORE_DIGEST_BYTES_SIZE OEM_SHA256_DIGEST_SIZE_IN_BYTES
 
 #define ErrCheckCert() do {                                                \
             if ( m_pbPublisherCert == NULL || m_cbPublisherCert == 0 ) {   \
@@ -38,17 +46,15 @@
         }while( 0 )
 
 using namespace std;
-using namespace WPEFramework;
+
 extern DRM_CONST_STRING g_dstrDrmPath;
+DRM_CONST_STRING g_dstrCDMDrmStoreName;                 //AML
 
 using SafeCriticalSection = WPEFramework::Core::SafeSyncType<WPEFramework::Core::CriticalSection>;
 
 WPEFramework::Core::CriticalSection drmAppContextMutex_;
-extern DRM_CONST_STRING g_dstrDrmPath;
 
-namespace CDMi {
-
-DRM_WCHAR* createDrmWchar(std::string const& s) {
+static DRM_WCHAR* createDrmWchar(std::string const& s) {
     DRM_WCHAR* w = new DRM_WCHAR[s.length() + 1];
     for (size_t i = 0; i < s.length(); ++i)
         w[i] = DRM_ONE_WCHAR(s[i], '\0');
@@ -56,7 +62,7 @@ DRM_WCHAR* createDrmWchar(std::string const& s) {
     return w;
 }
 
-void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch) {
+static void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch) {
     DRM_DWORD ich = 0;
 
     if ( f_pPackedString == nullptr || f_cch == 0 )
@@ -68,6 +74,8 @@ void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch) {
         f_pPackedString[f_cch - ich] = ((DRM_BYTE*)f_pPackedString)[ f_cch - ich ];
     }
 }
+
+namespace CDMi {
 
 class PlayReady : public IMediaKeys, public IMediaKeysExt {
 private:
@@ -121,8 +129,12 @@ public:
     }
 
     ~PlayReady(void) {
+#ifdef AML_SVP_PR
         if (m_poAppContext)
             Drm_Uninitialize(m_poAppContext.get());
+#else
+        SAFE_OEM_FREE( m_pbPublisherCert );
+#endif
     }
 
     CDMi_RESULT CreateMediaKeySession(
@@ -133,8 +145,7 @@ public:
         uint32_t f_cbInitData,
         const uint8_t *f_pbCDMData,
         uint32_t f_cbCDMData,
-        IMediaKeySession **f_ppiMediaKeySession) {        
-        fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
+        IMediaKeySession **f_ppiMediaKeySession) {
 
         bool isNetflixPlayready = (strstr(keySystem.c_str(), "netflix") != nullptr);
         if (isNetflixPlayready) {
@@ -142,8 +153,12 @@ public:
             if(!m_isAppCtxInitialized)
             {
                 InitializeAppCtx();
-            }   
+            }
+#ifdef AML_SVP_PR
             *f_ppiMediaKeySession = new CDMi::MediaKeySession(f_pbCDMData, f_cbCDMData, f_pbInitData, f_cbInitData, m_poAppContext.get(), !isNetflixPlayready);
+#else
+            *f_ppiMediaKeySession = new CDMi::MediaKeySession(f_pbInitData, f_cbInitData,  m_poAppContext.get(), !isNetflixPlayready);
+#endif
         } else {
            *f_ppiMediaKeySession = new CDMi::MediaKeySession(f_pbInitData, f_cbInitData, f_pbCDMData, f_cbCDMData, m_poAppContext.get(), !isNetflixPlayready);
         }
@@ -180,13 +195,12 @@ public:
 
     CDMi_RESULT SetServerCertificate( const uint8_t *f_pbServerCertificate, uint32_t f_cbServerCertificate)
     {
-        // CDMi_RESULT cr = CDMi_SUCCESS;
-        // if ( CDMi_FAILED( ( cr=SetSecureStopPublisherCert( f_pbServerCertificate, f_cbServerCertificate ) ) ) )
-        // {
-        //     fprintf(stderr, "[%s:%d] SetSecureStopPublisherCert failed",__FUNCTION__,__LINE__);
-        // }
-        // return cr;
-        return CDMi_S_FALSE;
+        CDMi_RESULT cr = CDMi_SUCCESS;
+        if ( CDMi_FAILED( ( cr=SetSecureStopPublisherCert( f_pbServerCertificate, f_cbServerCertificate ) ) ) )
+        {
+            fprintf(stderr, "[%s:%d] SetSecureStopPublisherCert failed",__FUNCTION__,__LINE__);
+        }
+        return cr;
     }
 
     virtual CDMi_RESULT Metrics(uint32_t length, const uint8_t* buffer)
@@ -209,10 +223,9 @@ public:
         return CDMi_SUCCESS;
     }
 
-    uint64_t GetDrmSystemTime() const override
+//    uint64_t GetDrmSystemTime() const override
+    uint64_t GetDrmSystemTime() const /* override */
     {
-        fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
-        ocdm_log("%s:%d: PR is asked for system time\n", __FILE__, __LINE__);
         DRM_RESULT dr                        = DRM_SUCCESS;
         DRM_SECURETIME_CLOCK_TYPE eClockType = DRM_SECURETIME_CLOCK_TYPE_INVALID;
         DRMFILETIME oftSystemTime            = { 0 };
@@ -224,7 +237,7 @@ public:
                 &oftSystemTime, &eClockType );
         if ( dr != DRM_SUCCESS )
         {
-            fprintf(stderr, "[%s:%d] Drm_SecureTime_GetValue failed. 0x%X ",__FUNCTION__,__LINE__,dr);
+            fprintf(stderr, "[%s:%d] Drm_SecureTime_GetValue failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
         }
         else if ( eClockType == DRM_SECURETIME_CLOCK_TYPE_INVALID )
         {
@@ -261,7 +274,8 @@ public:
         return CDMi_SUCCESS;
     }
 
-    std::string GetVersionExt() const override
+//    std::string GetVersionExt() const override
+    std::string GetVersionExt() const /* override */
     {
         const uint32_t MAXLEN = 64;
         char versionStr[MAXLEN];
@@ -274,22 +288,40 @@ public:
         return string(versionStr);
     }
 
-    uint32_t GetLdlSessionLimit() const override
+    std::string GetDrmStorePath()
+    {
+        const uint32_t MAXLEN = 256;
+        char pathStr[MAXLEN];
+        if (drmStore_.cchString >= MAXLEN)
+            return "";
+        DRM_UTL_DemoteUNICODEtoASCII(drmStore_.pwszString,
+                pathStr, MAXLEN);
+        ((DRM_BYTE*)pathStr)[drmStore_.cchString] = 0;
+        PackedCharsToNative(pathStr, drmStore_.cchString + 1);
+
+        return string(pathStr);
+    }
+
+//    uint32_t GetLdlSessionLimit() const override
+    uint32_t GetLdlSessionLimit() const /* override */
     {
         return ( uint32_t )DRM_MAX_NONCE_COUNT_PER_SESSION;
     }
 
-    bool IsSecureStopEnabled() override
+//    bool IsSecureStopEnabled() override
+    bool IsSecureStopEnabled() /* override */
     {
         return true;
     }
 
-    CDMi_RESULT EnableSecureStop(bool enable) override
+//    CDMi_RESULT EnableSecureStop(bool enable) override
+    CDMi_RESULT EnableSecureStop(bool enable) /* override */
     {
         return CDMi_SUCCESS;
     }
 
-    uint32_t ResetSecureStops() override
+//    uint32_t ResetSecureStops() override
+    uint32_t ResetSecureStops() /* override */
     {
         return 0;
     }
@@ -340,6 +372,7 @@ public:
         return cr;
             }
 
+    /*Generate a SecureStop challenge to send to the server.*/
     CDMi_RESULT GetSecureStop(
             const uint8_t sessionID[],
             uint32_t sessionIDLength,
@@ -382,7 +415,7 @@ public:
         if ( err != DRM_SUCCESS )
         {
             f_cbChallenge = 0;
-            fprintf(stderr, "[%s:%d] Drm_SecureStop_GenerateChallenge failed. 0x%X ",__FUNCTION__,__LINE__,(long)err);
+            fprintf(stderr, "[%s:%d] Drm_SecureStop_GenerateChallenge failed. 0x%X - %s",__FUNCTION__,__LINE__,(long)err,DRM_ERR_NAME(err));
             cr = CDMi_S_FALSE;
         }
         else if ( f_cbChallenge < cbChallenge )
@@ -402,6 +435,7 @@ public:
         return cr;
     }
 
+    /*Process the response from the SecureStop server.*/
     CDMi_RESULT CommitSecureStop(
             const uint8_t f_sessionID[],
             uint32_t f_sessionIDLength,
@@ -441,17 +475,44 @@ public:
         }
         else
         {
-            fprintf(stderr, "[%s:%d] Drm_SecureStop_ProcessResponse failed. 0x%X ",__FUNCTION__,__LINE__,(long)err);
+            fprintf(stderr, "[%s:%d] Drm_SecureStop_ProcessResponse failed. 0x%X - %s",__FUNCTION__,__LINE__,(long)err,DRM_ERR_NAME(err));
             cr = CDMi_S_FALSE;
         }
         SAFE_OEM_FREE( pcchCustomData ); 
         return cr;
     }
 
+    CDMi_RESULT CreateSystemExt() /* override */
+    {
+        if (m_poAppContext.get() != nullptr) {
+            m_poAppContext.reset();
+        }
+
+        std::string rdir(m_readDir);
+
+        drmdir_ = createDrmWchar(rdir);
+
+        g_dstrDrmPath.pwszString = drmdir_;
+        g_dstrDrmPath.cchString = rdir.length();
+
+        std::string store(m_storeLocation);
+
+        drmStore_.pwszString = createDrmWchar(store);
+        drmStore_.cchString = store.length();
+
+#ifdef AML_SVP_PR
+        g_dstrCDMDrmStoreName.pwszString = createDrmWchar(store);
+        g_dstrCDMDrmStoreName.cchString = store.length();
+#endif
+
+        pbRevocationBuffer_ = new DRM_BYTE[REVOCATION_BUFFER_SIZE];
+
+        return CDMi_SUCCESS;
+    }
+
     /*Initialize the PlayReady application context*/
     CDMi_RESULT InitializeAppCtx()
     {
-        fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
         DRM_BYTE *appOpaqueBuffer = nullptr;
 
         if (m_poAppContext.get() != nullptr) {
@@ -477,7 +538,7 @@ public:
                                 &drmStore_ );
             if ( err != DRM_SUCCESS )
             {
-                fprintf(stderr, "[%s:%d] Drm_Initialize failed. 0x%X - %s",__FUNCTION__,__LINE__,err,"DRM_ERR_NAME");
+                fprintf(stderr, "[%s:%d] Drm_Initialize failed. 0x%X - %s",__FUNCTION__,__LINE__,err,DRM_ERR_NAME(err));
                 int status = remove(GetDrmStorePath().c_str());
                 if(status == 0)
                     fprintf(stderr," sample.hds File removal successful");
@@ -495,15 +556,13 @@ public:
         {
             delete [] appOpaqueBuffer;
             m_poAppContext.reset();
-            fprintf(stderr, "[%s:%d] Drm_Revocation_SetBuffer failed. 0x%X - %s",__FUNCTION__,__LINE__,err,"DRM_ERR_NAME");
+            fprintf(stderr, "[%s:%d] Drm_Revocation_SetBuffer failed. 0x%X - %s",__FUNCTION__,__LINE__,err,DRM_ERR_NAME(err));
             return CDMi_S_FALSE;
         }
 
         m_isAppCtxInitialized = true;
         return CDMi_SUCCESS;
     }
-
-
 
     /*Unitialize the playready context and opaque buffer*/
     CDMi_RESULT UninitializeAppCtx()
@@ -521,7 +580,7 @@ public:
         DRM_RESULT err = Drm_GetOpaqueBuffer( m_poAppContext.get(), &pbOldBuf, &cbOldBuf );
         if(DRM_FAILED(err))
         {
-            fprintf(stderr, "[%s:%d] Drm_GetOpaqueBuffer failed. 0x%X - %s",__FUNCTION__,__LINE__,err,"DRM_ERR_NAME");
+            fprintf(stderr, "[%s:%d] Drm_GetOpaqueBuffer failed. 0x%X - %s",__FUNCTION__,__LINE__,err,DRM_ERR_NAME(err));
         }
 
         Drm_Uninitialize(m_poAppContext.get());
@@ -531,6 +590,37 @@ public:
             delete [] pbOldBuf;
         }
 
+        return CDMi_SUCCESS;
+    }
+
+    CDMi_RESULT InitSystemExt() /* override */
+    {
+        SafeCriticalSection lock(drmAppContextMutex_);
+
+        DRM_RESULT err = Drm_Platform_Initialize(nullptr);
+
+        if(DRM_FAILED(err))
+        {
+            if (m_poAppContext.get() != nullptr) {
+               m_poAppContext.reset();
+            }
+            fprintf(stderr, "[%s:%d] DrmPlatformInitialize failed. 0x%X - %s",__FUNCTION__,__LINE__,err,DRM_ERR_NAME(err));
+            return CDMi_S_FALSE;
+        }
+
+        if (CDMi_SUCCESS != InitializeAppCtx())
+        {
+            fprintf(stderr, "[%s:%d] InitializeAppCtx failed.",__FUNCTION__,__LINE__);
+            return CDMi_S_FALSE;
+        }
+
+#ifdef CLEAN_ON_INIT
+        err = CleanLicenseStore();
+        if(DRM_FAILED(err))
+        {
+            fprintf(stderr, "[%s:%d] CleanLicenseStore failed. 0x%X - %s",__FUNCTION__,__LINE__,err,DRM_ERR_NAME(err));
+        }
+#endif
         return CDMi_SUCCESS;
     }
 
@@ -551,7 +641,7 @@ public:
         DRM_RESULT err = CleanLicenseStore();
         if(DRM_FAILED(err))
         {
-            fprintf(stderr, "[%s:%d] CleanLicenseStore failed. 0x%X - %s",__FUNCTION__,__LINE__,err,"DRM_ERR_NAME");
+            fprintf(stderr, "[%s:%d] CleanLicenseStore failed. 0x%X - %s",__FUNCTION__,__LINE__,err,DRM_ERR_NAME(err));
         }
 
         if (CDMi_SUCCESS != UninitializeAppCtx() )
@@ -564,10 +654,10 @@ public:
         delete [] drmdir_;
         delete [] drmStore_.pwszString;
 
-        // err = CPRDrmPlatform::DrmPlatformUninitialize();
+        err = CPRDrmPlatform::DrmPlatformUninitialize();
         if(DRM_FAILED(err))
         {
-            fprintf(stderr, "[%s:%d] DrmPlatformUninitialize failed. 0x%X - %s",__FUNCTION__,__LINE__,err,"DRM_ERR_NAME");
+            fprintf(stderr, "[%s:%d] DrmPlatformUninitialize failed. 0x%X - %s",__FUNCTION__,__LINE__,err,DRM_ERR_NAME(err));
             return CDMi_S_FALSE;
         }
 
@@ -585,10 +675,10 @@ public:
         struct stat buf;
         CDMi_RESULT cr = CDMi_SUCCESS;
 
-        // if (CDMi_SUCCESS != UninitializeAppCtx() )
-        // {
-        //     fprintf(stderr, "[%s:%d] UninitializeAppCtx failed.",__FUNCTION__,__LINE__);
-        // }
+        if (CDMi_SUCCESS != UninitializeAppCtx() )
+        {
+            fprintf(stderr, "[%s:%d] UninitializeAppCtx failed.",__FUNCTION__,__LINE__);
+        }
 
         if (stat(m_storeLocation.c_str(), &buf) != -1)
         {
@@ -623,140 +713,42 @@ public:
         SafeCriticalSection lock(drmAppContextMutex_);
         CDMi_RESULT ret = CDMi_SUCCESS;
 
-        // FILE* const file = fopen(m_storeLocation.c_str(), "rb");
-        // if (!file)
-        //      return CDMi_S_FALSE;
+        FILE* const file = fopen(m_storeLocation.c_str(), "rb");
+        if (!file)
+             return CDMi_S_FALSE;
 
-        // SHA256_CTX sha256;
-        // SHA256_Init(&sha256);
-        // const int BUFSIZE = 32768;
-        // std::vector<unsigned char> buffer(BUFSIZE, 0);
-        // size_t bytesRead = 0;
-        // while ((bytesRead = fread(&buffer[0], 1, BUFSIZE, file))) {
-        //     if (!SHA256_Update(&sha256, &buffer[0], bytesRead)) {
-        //         ret = CDMi_S_FALSE;
-        //         break;
-        //     }
-        // }
-        // fclose(file);
-        // SHA256_Final(secureStoreHash, &sha256);
-
-        // return ret;
-
-#ifdef NETFLIX
-        if (secureStoreHashLength < 256)
-        {
-            ocdm_log("Error: opencdm_get_secure_store_hash needs an array of size 256\n");
-            return CDMi_S_FALSE;
+        SHA256_CTX sha256;
+        SHA256_Init(&sha256);
+        const int BUFSIZE = 32768;
+        std::vector<unsigned char> buffer(BUFSIZE, 0);
+        size_t bytesRead = 0;
+        while ((bytesRead = fread(&buffer[0], 1, BUFSIZE, file))) {
+            if (!SHA256_Update(&sha256, &buffer[0], bytesRead)) {
+                ret = CDMi_S_FALSE;
+                break;
+            }
         }
+        fclose(file);
+        SHA256_Final(secureStoreHash, &sha256);
 
-        DRM_RESULT err = Drm_GetSecureStoreHash(&drmStore_, secureStoreHash);
-        if (err != DRM_SUCCESS)
-        {
-            ocdm_log("Error: Drm_GetSecureStoreHash returned 0x%lX\n", (long)err);
-            return CDMi_S_FALSE;
-        }
-#endif
-
-        return CDMi_SUCCESS;
-
+        return ret;
     }
     
-    std::string GetDrmStorePath()
-    {
-        fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
-        const uint32_t MAXLEN = 256;
-        char pathStr[MAXLEN];
-        if (drmStore_.cchString >= MAXLEN)
-            return "";
-        DRM_UTL_DemoteUNICODEtoASCII(drmStore_.pwszString,
-                pathStr, MAXLEN);
-        ((DRM_BYTE*)pathStr)[drmStore_.cchString] = 0;
-        PackedCharsToNative(pathStr, drmStore_.cchString + 1);
-
-        return string(pathStr);
-    }
-
-    CDMi_RESULT InitSystemExt() /* override */
-    {
-        fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
-
-        SafeCriticalSection lock(drmAppContextMutex_);
-
-        DRM_RESULT err = Drm_Platform_Initialize(nullptr);
-
-        if(DRM_FAILED(err))
-        {
-            if (m_poAppContext.get() != nullptr) {
-               m_poAppContext.reset();
-            }
-            fprintf(stderr, "[%s:%d] DrmPlatformInitialize failed. 0x%X - %s",__FUNCTION__,__LINE__,err,"DRM_ERR_NAME");
-            return CDMi_S_FALSE;
-        }
-
-        if (CDMi_SUCCESS != InitializeAppCtx())
-        {
-            fprintf(stderr, "[%s:%d] InitializeAppCtx failed.",__FUNCTION__,__LINE__);
-            return CDMi_S_FALSE;
-        }
-
-#ifdef CLEAN_ON_INIT
-        err = CleanLicenseStore();
-        if(DRM_FAILED(err))
-        {
-            fprintf(stderr, "[%s:%d] CleanLicenseStore failed. 0x%X - %s",__FUNCTION__,__LINE__,err,DRM_ERR_NAME(err));
-        }
-#endif
-        return CDMi_SUCCESS;
-    }
-
-    CDMi_RESULT CreateSystemExt() /* override */
-    {
-        fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
-        if (m_poAppContext.get() != nullptr) {
-            m_poAppContext.reset();
-        }
-
-        std::string rdir(m_readDir);
-
-        drmdir_ = createDrmWchar(rdir);
-
-        g_dstrDrmPath.pwszString = drmdir_;
-        g_dstrDrmPath.cchString = rdir.length();
-
-        std::string store(m_storeLocation);
-
-        drmStore_.pwszString = createDrmWchar(store);
-        drmStore_.cchString = store.length();
-
-#ifdef AML_SVP_PR
-        g_dstrCDMDrmStoreName.pwszString = createDrmWchar(store);
-        g_dstrCDMDrmStoreName.cchString = store.length();
-#endif
-
-        pbRevocationBuffer_ = new DRM_BYTE[REVOCATION_BUFFER_SIZE];
-
-        return CDMi_SUCCESS;
-    }
-
-
     void OnSystemConfigurationAvailable(const WPEFramework::PluginHost::IShell * shell, const std::string& configline)
     {
 #ifdef AML_SVP_PR
-        fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
         string persistentPath = shell->PersistentPath();
         string statePath = persistentPath + "state"; // To store rollback clock state etc
         string storePath = persistentPath + "playready/storage";
         m_readDir = persistentPath + "playready";
         m_storeLocation = persistentPath + "playready/storage/drmstore";
 
-        Core::Directory storeDir(storePath.c_str());
+        WPEFramework::Core::Directory storeDir(storePath.c_str());
         storeDir.CreatePath();
-        Core::Directory stateDir(statePath.c_str());
+        WPEFramework::Core::Directory stateDir(statePath.c_str());
         stateDir.Create();
 #else
 
-        fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
         Config config;
         config.FromString(configline);
         m_readDir = config.ReadDir.Value();
@@ -764,8 +756,8 @@ public:
         m_storeLocation = "/opt/drm/sample.hds";
         string statePath = config.HomePath.Value().c_str();
 #endif
-        fprintf(stderr,"#FASIL# %s: %s: %d\n", statePath.c_str(),storePath.c_str(),__LINE__);
-        fprintf(stderr,"#FASIL# %s: %s: %d\n", m_readDir.c_str(),m_storeLocation.c_str(),__LINE__);
+        fprintf(stderr,"#COMMON-OCDM# %s: %s: %d\n", statePath.c_str(),storePath.c_str(),__LINE__);
+        fprintf(stderr,"#COMMON-OCDM# %s: %s: %d\n", m_readDir.c_str(),m_storeLocation.c_str(),__LINE__);
 
         if(!statePath.empty()) {
             WPEFramework::Core::SystemInfo::SetEnvironment(_T("HOME"), statePath);
@@ -779,7 +771,7 @@ public:
 
     void Initialize(const WPEFramework::PluginHost::IShell * service, const std::string& configline)
     {
-        fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
+        fprintf(stderr,"#COMMON-OCDM# : %s: %d\n",__func__,__LINE__);
         OnSystemConfigurationAvailable(service, configline);
     }
 
@@ -804,7 +796,6 @@ static SystemFactoryType<PlayReady> g_instance({"video/x-h264", "audio/mpeg"});
 }  // namespace CDMi
 
 CDMi::ISystemFactory* GetSystemFactory() {
-    fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
-    fprintf(stderr,"#FASIL# %s: %s: %d\n", __FILE__,__func__,__LINE__);
+    fprintf(stderr,"#COMMON-OCDM# : %s: %d\n",__func__,__LINE__);
     return (&CDMi::g_instance);
 }
