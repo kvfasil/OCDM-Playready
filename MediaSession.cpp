@@ -23,14 +23,19 @@
 #include <string.h>
 #include <vector>
 #include <sys/utsname.h>
-//#include <core/core.h>
+#include <drmresults.h>
+
+#ifdef USE_SVP
 #include "gst_svp_meta.h"
+#endif
 
 using namespace WPEFramework;
 using SafeCriticalSection = Core::SafeSyncType<Core::CriticalSection>;
 MODULE_NAME_DECLARATION(BUILD_REFERENCE);
 
 extern Core::CriticalSection drmAppContextMutex_;
+WPEFramework::Core::CriticalSection prSessionMutex_;
+
 extern DRM_CONST_STRING g_dstrCDMDrmStoreName;
 
 #define NYI_KEYSYSTEM "keysystem-placeholder"
@@ -178,6 +183,99 @@ bool parsePlayreadyInitializationData(const std::string& initData, std::string* 
   return false;
 }
 
+PlayreadySession::PlayreadySession() 
+    : m_poAppContext(nullptr)
+    , m_pbPROpaqueBuf(nullptr)
+    , m_cbPROpaqueBuf(0)
+    , m_bInitCalled(false)
+{
+    void *pPlatformInitData = NULL;
+  //   // void svpGetDrmPlatformInitData( void ** ppPlatformInitData)
+  //   // svpGetDrmPlatformInitData( &pPlatformInitData);
+
+  //TODO
+  // if ( DRM_FAILED( CPRDrmPlatform::DrmPlatformInitialize( pPlatformInitData ) ) )
+  // {
+  //     fprintf(stderr, "[%s:%d] DrmPlatformInitialize failed.",__FUNCTION__,__LINE__);
+  // }
+}
+
+PlayreadySession::~PlayreadySession()
+{
+    SafeCriticalSection systemLock(prSessionMutex_);
+
+    if ( IsPlayreadySessionInit() )
+    {
+        SAFE_OEM_FREE(m_pbPROpaqueBuf);
+        m_cbPROpaqueBuf = 0;
+
+        if (m_poAppContext != nullptr)
+        {
+            Drm_Uninitialize(m_poAppContext);
+            SAFE_OEM_FREE(m_poAppContext);
+            m_poAppContext = nullptr;
+        }
+    }
+
+    // TODO
+    // if (DRM_FAILED(CPRDrmPlatform::DrmPlatformUninitialize()))
+    // {
+    //     fprintf(stderr, "[%s:%d] DrmPlatformUninitialize failed.",__FUNCTION__,__LINE__);
+    // }
+}
+
+DRM_APP_CONTEXT * PlayreadySession::InitializeDRM(const DRM_CONST_STRING * pDRMStoreName)
+{
+    DRM_RESULT dr = DRM_SUCCESS;
+    DRM_VOID *pdrmOemContext = nullptr;
+
+    SafeCriticalSection systemLock(prSessionMutex_);
+
+    m_bInitCalled = true;
+
+    if (m_poAppContext == nullptr)
+    {
+
+
+//      ChkMem( m_pbOpaqueBuffer = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE)); //aml
+        ChkMem( m_pbPROpaqueBuf  = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE) );
+        ZEROMEM(m_pbPROpaqueBuf, MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE);
+//      m_cbOpaqueBuffer = MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;  //aml
+        m_cbPROpaqueBuf =  MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;
+
+//      ChkMem( m_poAppContext = (DRM_APP_CONTEXT *)Oem_MemAlloc(SIZEOF(DRM_APP_CONTEXT))); //aml
+        ChkMem( m_poAppContext = (DRM_APP_CONTEXT * )Oem_MemAlloc( sizeof(DRM_APP_CONTEXT) ) );
+        ZEROMEM( m_poAppContext, sizeof(DRM_APP_CONTEXT) );
+
+        /* pdrmOemContext this should be valid for BRCM , others it could be null */
+        // svpGetDrmOEMContext(&pdrmOemContext);
+        // Initialize DRM app context.
+//        dr = Drm_Initialize(m_poAppContext, nullptr,        m_pbOpaqueBuffer, m_cbOpaqueBuffer, &g_dstrCDMDrmStoreName);  //aml
+        dr = Drm_Initialize(m_poAppContext, pdrmOemContext, m_pbPROpaqueBuf, m_cbPROpaqueBuf, pDRMStoreName);
+        if (dr != DRM_SUCCESS)
+        {
+            ChkDR(Drm_Initialize(m_poAppContext, pdrmOemContext, m_pbPROpaqueBuf, m_cbPROpaqueBuf, pDRMStoreName));
+        }
+  }
+  else
+  {
+      DRM_RESULT err = Drm_Reinitialize(m_poAppContext);
+      if (DRM_FAILED(err))
+      {
+          fprintf(stderr, "[%s:%d] Drm_Reinitialize failed. 0x%lX - %s",__FUNCTION__,__LINE__,(long )err,DRM_ERR_NAME(err));
+      }
+  }
+
+  return m_poAppContext;
+
+ErrorExit:
+  if (DRM_FAILED(dr)) {
+    fprintf(stderr, "[%s:%d]  failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+  }
+  return nullptr;    
+}
+
+
 MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_APP_CONTEXT * poAppContext, bool initiateChallengeGeneration /* = false */)
     : m_pbOpaqueBuffer(nullptr)
     , m_cbOpaqueBuffer(0)
@@ -198,13 +296,20 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
     , m_pSVPContext(NULL)
     , m_rpcID(0)
 {
-   memset(&levels_, 0, sizeof(levels_));
+   memset(&levels_, 0, sizeof(levels_));          //need to comment later.
+
    DRM_RESULT dr = DRM_SUCCESS;
+   DRM_ID oSessionID;
+   DRM_CONST_STRING    dstrWRMHEADER = DRM_EMPTY_DRM_STRING;
+   
+   DRM_DWORD cchEncodedSessionID = SIZEOF(m_rgchSessionID);
+
 
    ocdm_log("Initializing SVP context for client side\n");
    gst_svp_ext_get_context(&m_pSVPContext, Client, m_rpcID);
 
    if (!initiateChallengeGeneration) {
+      fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
       mLicenseResponse = std::unique_ptr<LicenseResponse>(new LicenseResponse());
       mSecureStopId.clear();
 
@@ -213,25 +318,30 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
       memcpy(&mDrmHeader[0], f_pbCDMData, f_cbCDMData);
       m_secCount++;
    } else {
+      fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
       m_oDecryptContext = new DRM_DECRYPT_CONTEXT;
       memset(m_oDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
       m_oDecryptContext2 = new DRM_DECRYPT_CONTEXT;
       memset(m_oDecryptContext2, 0, sizeof(DRM_DECRYPT_CONTEXT));
 
-      DRM_ID oSessionID;
-
-      DRM_DWORD cchEncodedSessionID = SIZEOF(m_rgchSessionID);
-
       // FIXME: Change the interface of this method? Not sure why the win32 bondage is still so popular.
       std::string initData(reinterpret_cast<const char*>(f_pbInitData), f_cbInitData);
       std::string playreadyInitData;
 
+//  ChkBOOL(m_eKeyState == KEY_CLOSED, DRM_E_INVALIDARG);
+
+  // mMaxResDecodePixels = 0;
+  // mMaxResDecodeSet = false;
+
+//////////////////////////////////////////////////////////////////////////////////////////////
       ocdm_log("Constructing PlayReady Session [%p]\n", this);
 
-      ChkMem(m_pbOpaqueBuffer = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE));
-      m_cbOpaqueBuffer = MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;
+      ChkMem(m_pbOpaqueBuffer = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE)); //aml
+      m_cbOpaqueBuffer = MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;  //aml
+
 #ifndef REUSE_APPCONTEXT
-      ChkMem(m_poAppContext = (DRM_APP_CONTEXT *)Oem_MemAlloc(SIZEOF(DRM_APP_CONTEXT)));
+      fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
+      ChkMem(m_poAppContext = (DRM_APP_CONTEXT *)Oem_MemAlloc(SIZEOF(DRM_APP_CONTEXT))); //aml
 
       // Initialize DRM app context.
       dr = Drm_Initialize(m_poAppContext,
@@ -254,6 +364,12 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
                   &g_dstrCDMDrmStoreName);
       }
       ChkDR(dr);
+/////////////////////////////////////////////////////////////////////////////////////////
+
+  // if (m_poAppContext == nullptr) {
+  //     m_poAppContext = InitializeDRM(&g_dstrCDMDrmStoreName);
+  // }
+
       if (DRM_REVOCATION_IsRevocationSupported()) {
          ChkMem(m_pbRevocationBuffer = (DRM_BYTE *)Oem_MemAlloc(REVOCATION_BUFFER_SIZE));
 
@@ -261,11 +377,6 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
                                        m_pbRevocationBuffer,
                                        REVOCATION_BUFFER_SIZE));
       }
-#endif
-
-#ifdef PR_4_4
-      //temporary hack to allow time based licenses
-      ( DRM_REINTERPRET_CAST( DRM_APP_CONTEXT_INTERNAL, m_poAppContext ) )->fClockSet = TRUE;
 #endif
 
       // Generate a random media session ID.
@@ -285,10 +396,19 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
       if (!parsePlayreadyInitializationData(initData, &playreadyInitData)) {
             playreadyInitData = initData;
       }
+
+
       ChkDR(Drm_Content_SetProperty(m_poAppContext,
                                     DRM_CSP_AUTODETECT_HEADER,
                                     reinterpret_cast<const DRM_BYTE*>(playreadyInitData.data()),
                                     playreadyInitData.size()));
+
+
+
+#ifdef PR_4_4
+      //temporary hack to allow time based licenses
+      ( DRM_REINTERPRET_CAST( DRM_APP_CONTEXT_INTERNAL, m_poAppContext ) )->fClockSet = TRUE;
+#endif
 
       // The current state MUST be KEY_INIT otherwise error out.
       ChkBOOL(m_eKeyState == KEY_INIT, DRM_E_INVALIDARG);
@@ -303,6 +423,8 @@ ErrorExit:
     ocdm_log("playready error1: %s\n", description);
   }
 }
+
+
 
 MediaKeySession::~MediaKeySession(void) {
   gst_svp_ext_free_context(m_pSVPContext);

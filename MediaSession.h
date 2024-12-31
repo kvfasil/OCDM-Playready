@@ -265,7 +265,7 @@ protected:
     bool m_bInitCalled;
 };
 
-class MediaKeySession : public IMediaKeySession, public IMediaKeySessionExt {
+class MediaKeySession : public PlayreadySession, public IMediaKeySession, public IMediaKeySessionExt {
 private:
     enum KeyState {
         // Has been initialized.
