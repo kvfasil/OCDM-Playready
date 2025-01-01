@@ -190,8 +190,8 @@ PlayreadySession::PlayreadySession()
     , m_bInitCalled(false)
 {
     void *pPlatformInitData = NULL;
-  //   // void svpGetDrmPlatformInitData( void ** ppPlatformInitData)
-  //   // svpGetDrmPlatformInitData( &pPlatformInitData);
+  //    void svpGetDrmPlatformInitData( void ** ppPlatformInitData)
+  //    svpGetDrmPlatformInitData( &pPlatformInitData);
 
   //TODO
   // if ( DRM_FAILED( CPRDrmPlatform::DrmPlatformInitialize( pPlatformInitData ) ) )
@@ -235,67 +235,26 @@ DRM_APP_CONTEXT * PlayreadySession::InitializeDRM(const DRM_CONST_STRING * pDRMS
 
     if (m_poAppContext == nullptr)
     {
-
       fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
-      // ChkMem( m_pbOpaqueBuffer = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE)); //aml
-      // ZEROMEM(m_pbOpaqueBuffer, MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE);
-      // m_cbOpaqueBuffer = MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;  //aml
-
       ChkMem( m_pbPROpaqueBuf  = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE) );
       ZEROMEM(m_pbPROpaqueBuf, MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE);
       m_cbPROpaqueBuf =  MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;
 
-      // ChkMem( m_poAppContext = (DRM_APP_CONTEXT *)Oem_MemAlloc(SIZEOF(DRM_APP_CONTEXT))); //aml
-      // ZEROMEM( m_poAppContext, sizeof(DRM_APP_CONTEXT) );
+      ChkMem( m_poAppContext = (DRM_APP_CONTEXT * )Oem_MemAlloc( sizeof(DRM_APP_CONTEXT) ) );
+      ZEROMEM( m_poAppContext, sizeof(DRM_APP_CONTEXT) );
 
-        ChkMem( m_poAppContext = (DRM_APP_CONTEXT * )Oem_MemAlloc( sizeof(DRM_APP_CONTEXT) ) );
-        ZEROMEM( m_poAppContext, sizeof(DRM_APP_CONTEXT) );
-
-        /* pdrmOemContext this should be valid for BRCM , others it could be null */
-        // svpGetDrmOEMContext(&pdrmOemContext);
-        // Initialize DRM app context.
-        fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
-        dr = Drm_Initialize(m_poAppContext, pdrmOemContext, m_pbPROpaqueBuf, m_cbPROpaqueBuf, pDRMStoreName);
-        if (dr != DRM_SUCCESS)
-        {
-            ocdm_log( "%s:%d drmstore corrrupt, delete it !!!!\n", __FUNCTION__, __LINE__);
-            //if drmstore file is corrupted, remove it and init again, playready will create a new one
-            remove(GetDrmStorePath().c_str());
-            ChkDR(Drm_Initialize(m_poAppContext, pdrmOemContext, m_pbPROpaqueBuf, m_cbPROpaqueBuf, pDRMStoreName));
-        }
-
-        // dr = Drm_Initialize(m_poAppContext, nullptr, m_pbOpaqueBuffer, m_cbOpaqueBuffer, &g_dstrCDMDrmStoreName);  //aml
-        // if (dr != DRM_SUCCESS)
-        // {
-        //     ocdm_log( "%s:%d drmstore corrrupt, delete it !!!!\n", __FUNCTION__, __LINE__);
-        //     //if drmstore file is corrupted, remove it and init again, playready will create a new one
-        //     remove(GetDrmStorePath().c_str());
-        //     ChkDR(Drm_Initialize(m_poAppContext, nullptr, m_pbOpaqueBuffer, m_cbOpaqueBuffer, &g_dstrCDMDrmStoreName));
-        // }
-
+      /* pdrmOemContext this should be valid for BRCM , others it could be null */
+      // svpGetDrmOEMContext(&pdrmOemContext);
+      // Initialize DRM app context.
+      dr = Drm_Initialize(m_poAppContext, pdrmOemContext, m_pbPROpaqueBuf, m_cbPROpaqueBuf, pDRMStoreName);
+      if (dr != DRM_SUCCESS)
+      {
+          ocdm_log( "%s:%d drmstore corrrupt, delete it !!!!\n", __FUNCTION__, __LINE__);
+          //if drmstore file is corrupted, remove it and init again, playready will create a new one
+          remove(GetDrmStorePath().c_str());
+          ChkDR(Drm_Initialize(m_poAppContext, pdrmOemContext, m_pbPROpaqueBuf, m_cbPROpaqueBuf, pDRMStoreName));
+      }
       fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
-
-/////////////////////////////////////////////////////////////////////////////////////
-
-// //      ChkMem( m_pbOpaqueBuffer = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE)); //aml
-//         ChkMem( m_pbPROpaqueBuf  = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE) );
-//         ZEROMEM(m_pbPROpaqueBuf, MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE);
-// //      m_cbOpaqueBuffer = MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;  //aml
-//         m_cbPROpaqueBuf =  MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;
-
-// //      ChkMem( m_poAppContext = (DRM_APP_CONTEXT *)Oem_MemAlloc(SIZEOF(DRM_APP_CONTEXT))); //aml
-//         ChkMem( m_poAppContext = (DRM_APP_CONTEXT * )Oem_MemAlloc( sizeof(DRM_APP_CONTEXT) ) );
-//         ZEROMEM( m_poAppContext, sizeof(DRM_APP_CONTEXT) );
-
-//         /* pdrmOemContext this should be valid for BRCM , others it could be null */
-//         // svpGetDrmOEMContext(&pdrmOemContext);
-//         // Initialize DRM app context.
-// //        dr = Drm_Initialize(m_poAppContext, nullptr,        m_pbOpaqueBuffer, m_cbOpaqueBuffer, &g_dstrCDMDrmStoreName);  //aml
-//         dr = Drm_Initialize(m_poAppContext, pdrmOemContext, m_pbPROpaqueBuf, m_cbPROpaqueBuf, pDRMStoreName);
-//         if (dr != DRM_SUCCESS)
-//         {
-//             ChkDR(Drm_Initialize(m_poAppContext, pdrmOemContext, m_pbPROpaqueBuf, m_cbPROpaqueBuf, pDRMStoreName));
-//         }
   }
   else
   {
@@ -314,7 +273,6 @@ ErrorExit:
   }
   return nullptr;    
 }
-
 
 MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_APP_CONTEXT * poAppContext, bool initiateChallengeGeneration /* = false */)
     : m_pbOpaqueBuffer(nullptr)
@@ -344,7 +302,6 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
    
    DRM_DWORD cchEncodedSessionID = SIZEOF(m_rgchSessionID);
 
-
    ocdm_log("Initializing SVP context for client side\n");
    gst_svp_ext_get_context(&m_pSVPContext, Client, m_rpcID);
 
@@ -370,11 +327,10 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
 
 //  ChkBOOL(m_eKeyState == KEY_CLOSED, DRM_E_INVALIDARG);
 
-  // mMaxResDecodePixels = 0;
-  // mMaxResDecodeSet = false;
+//  mMaxResDecodePixels = 0;
+//  mMaxResDecodeSet = false;
 
 /////////////////////////////////////////////////////////////////////////////////////////
-      // fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
       // ChkMem( m_pbOpaqueBuffer = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE)); //aml
       // ZEROMEM(m_pbOpaqueBuffer, MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE);
       // m_cbOpaqueBuffer = MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;  //aml
@@ -386,7 +342,6 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
       //   // svpGetDrmOEMContext(&pdrmOemContext);
       //   // Initialize DRM app context.
       //   dr = Drm_Initialize(m_poAppContext, nullptr, m_pbOpaqueBuffer, m_cbOpaqueBuffer, &g_dstrCDMDrmStoreName);  //aml
-      //   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
       //   if (dr != DRM_SUCCESS)
       //   {
       //       ocdm_log( "%s:%d drmstore corrrupt, delete it !!!!\n", __FUNCTION__, __LINE__);
@@ -395,10 +350,7 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
       //       ChkDR(Drm_Initialize(m_poAppContext, nullptr, m_pbOpaqueBuffer, m_cbOpaqueBuffer, &g_dstrCDMDrmStoreName));
       //   }
 
-      // fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
-/////////////////////////////////////////////////////////////////////////////////////////
-
-//  if (m_poAppContext == nullptr) {
+//  if (m_poAppContext == nullptr) {     //RTK
   if (m_poAppContext) {
       fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
       m_poAppContext = InitializeDRM(&g_dstrCDMDrmStoreName);
@@ -431,13 +383,10 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
             playreadyInitData = initData;
       }
 
-
       ChkDR(Drm_Content_SetProperty(m_poAppContext,
                                     DRM_CSP_AUTODETECT_HEADER,
                                     reinterpret_cast<const DRM_BYTE*>(playreadyInitData.data()),
                                     playreadyInitData.size()));
-
-
 
 #ifdef PR_4_4
       //temporary hack to allow time based licenses
