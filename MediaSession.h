@@ -541,7 +541,7 @@ class CPRDrmPlatform
 {
 public:
     static DRM_RESULT DrmPlatformInitialize();
-    static DRM_RESULT DrmPlatformInitialize( DRM_INIT_CONTEXT * );
+    static DRM_RESULT DrmPlatformInitialize( void * );
     static DRM_RESULT DrmPlatformUninitialize();
 private:
     static DRM_DWORD m_dwInitRefCount;

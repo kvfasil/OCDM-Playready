@@ -49,6 +49,7 @@ using namespace std;
 
 extern DRM_CONST_STRING g_dstrDrmPath;
 DRM_CONST_STRING g_dstrCDMDrmStoreName;                 //AML
+DRM_VOID *m_drmOemContext;
 
 using SafeCriticalSection = WPEFramework::Core::SafeSyncType<WPEFramework::Core::CriticalSection>;
 
@@ -597,7 +598,8 @@ public:
     {
         SafeCriticalSection lock(drmAppContextMutex_);
 
-        DRM_RESULT err = Drm_Platform_Initialize(nullptr);
+//        DRM_RESULT err = Drm_Platform_Initialize(nullptr);
+        DRM_RESULT err = CPRDrmPlatform::DrmPlatformInitialize();
 
         if(DRM_FAILED(err))
         {

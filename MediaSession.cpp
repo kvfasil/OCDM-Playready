@@ -33,10 +33,12 @@ using namespace WPEFramework;
 using SafeCriticalSection = Core::SafeSyncType<Core::CriticalSection>;
 MODULE_NAME_DECLARATION(BUILD_REFERENCE);
 
+WPEFramework::Core::CriticalSection prPlatformMutex_;
 extern Core::CriticalSection drmAppContextMutex_;
 WPEFramework::Core::CriticalSection prSessionMutex_;
 
 extern DRM_CONST_STRING g_dstrCDMDrmStoreName;
+extern DRM_VOID *m_drmOemContext;
 
 #define NYI_KEYSYSTEM "keysystem-placeholder"
 
@@ -56,11 +58,18 @@ extern DRM_CONST_STRING g_dstrCDMDrmStoreName;
 #define NO_OF DRM_NO_OF
 #endif
 
+#define DEVCERT_WAIT_SECS 30
+#define DEVCERT_RETRY_MAX 4
+
+#define EXPECTED_AES_CTR_IVDATA_SIZE (8)
+#define EXPECTED_AES_CBC_IVDATA_SIZE (16)
 using namespace std;
 
 namespace CDMi {
 
 const DRM_CONST_STRING *g_rgpdstrRights[1] = {&g_dstrDRM_RIGHT_PLAYBACK};
+
+DRM_DWORD CPRDrmPlatform::m_dwInitRefCount = 0;
 
 void * MediaKeySession::sess = NULL;
 uint32_t MediaKeySession::m_secCount = 0;
@@ -181,6 +190,118 @@ bool parsePlayreadyInitializationData(const std::string& initData, std::string* 
 
   // we did not find a matching record
   return false;
+}
+
+/*
+ * f_pContext(input) : It could be NULL or Valid pointer 
+ */
+DRM_RESULT CPRDrmPlatform::DrmPlatformInitialize( void *f_pContext )
+{
+    DRM_RESULT dr = DRM_SUCCESS;
+    SafeCriticalSection systemLock(prPlatformMutex_);
+
+    if ( ++m_dwInitRefCount == 1 )
+    {
+        DRM_RESULT dr = DRM_SUCCESS;
+        DRM_DWORD cAttempts = 0;
+
+        while( ( dr=Drm_Platform_Initialize( f_pContext ) ) == DRM_E_DEPRECATED_DEVCERT_READ_ERROR) {
+
+            Drm_Platform_Uninitialize( (void *)nullptr );
+
+            if ( cAttempts >= DEVCERT_RETRY_MAX ){
+                ChkDR( DRM_E_DEPRECATED_DEVCERT_READ_ERROR);
+            }
+            sleep( DEVCERT_WAIT_SECS );
+            ++cAttempts;
+        }
+    }
+
+    ErrorExit:
+
+    if ( DRM_FAILED( dr ) )
+    {
+        --m_dwInitRefCount;
+        fprintf(stderr, "[%s:%d] failed. 0x%X",__FUNCTION__,__LINE__,dr);
+    }
+
+    return dr;
+}
+
+DRM_RESULT CPRDrmPlatform::DrmPlatformInitialize()
+{
+    void *pPlatformInitData = NULL;
+    /* realtek, it returns DRM_INIT_CONTEXT as pPlatformInitData, 
+     * Amlogic, it would be NULL
+     * BRCM, it returns OEM_Settings as pPlatformInitData
+     */
+    // void svpGetDrmPlatformInitData( void ** ppPlatformInitData)
+    // svpGetDrmPlatformInitData( &pPlatformInitData);
+    return DrmPlatformInitialize( (void *)pPlatformInitData );
+}
+
+DRM_RESULT CPRDrmPlatform::DrmPlatformUninitialize()
+{
+    DRM_RESULT dr = DRM_SUCCESS;
+
+    SafeCriticalSection systemLock(prPlatformMutex_);
+
+    if ( m_dwInitRefCount == 0 )
+    {
+        fprintf(stderr, "[%s:%d] ref count is already 0",__FUNCTION__,__LINE__);
+        ChkDR( DRM_E_FAIL );
+    }
+    else if ( --m_dwInitRefCount == 0 )
+    {
+        /* m_drmOemContext currently used by BRCM. AML & RTK it could be stub */
+        //void svpGetDrmOEMContext(void ** ppdrmOemContext)
+        // svpGetDrmOEMContext(&m_drmOemContext);
+
+        if ( DRM_FAILED( (dr=Drm_Platform_Uninitialize( (void *)m_drmOemContext ) ) ) )
+        {
+            fprintf(stderr, "[%s:%d] Drm_Platform_Uninitialize failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+            goto ErrorExit;
+        }
+    }
+
+    ErrorExit:
+
+    if ( DRM_FAILED( dr ) )
+    {
+        fprintf(stderr, "[%s:%d]  failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+    }
+
+    return dr;
+
+}
+
+/*Get the version and list of keyids from the header*/
+DRM_RESULT Header_GetInfo(
+        const DRM_CONST_STRING      *f_pdstrWRMHEADER,
+              eDRM_HEADER_VERSION   *f_pHeaderVersion,
+              DRM_CONST_STRING     **f_ppdstrKIDs,
+              DRM_DWORD             *f_pcbKIDs)
+{
+    DRM_RESULT          dr              = DRM_SUCCESS;
+    DRM_DWORD           cKIDs           = 0;
+    DRM_CONST_STRING   *pdstrKIDs       = NULL;
+
+    PR4ChkDR( DRM_HDR_GetHeaderVersion( f_pdstrWRMHEADER, f_pHeaderVersion ) );
+
+    PR4ChkDR( DRM_HDR_GetAttribute(
+         f_pdstrWRMHEADER,
+         NULL,
+         DRM_HEADER_ATTRIB_KIDS,
+         NULL,
+         &cKIDs,
+         &pdstrKIDs,
+         0 ) );
+
+    *f_ppdstrKIDs = pdstrKIDs;
+    *f_pcbKIDs = cKIDs;
+
+ErrorExit:
+    return dr;
 }
 
 PlayreadySession::PlayreadySession() 
