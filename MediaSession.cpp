@@ -65,6 +65,135 @@ extern DRM_VOID *m_drmOemContext;
 #define EXPECTED_AES_CBC_IVDATA_SIZE (16)
 using namespace std;
 
+KeyId::KeyId( const DRM_BYTE *f_pBytes , KeyIdOrder keyOrder)
+{
+    m_hexStr.clear();
+    m_base64Str.clear();
+    ZEROMEM( m_bytes, DRM_ID_SIZE );
+    keyIdOrder = KEYID_ORDER_UNKNOWN;
+    memcpy( m_bytes, f_pBytes, DRM_ID_SIZE );
+    keyIdOrder = keyOrder;
+}
+
+DRM_RESULT KeyId::keyDecode( const DRM_CONST_STRING &f_pdstrB64 ){
+
+    DRM_DWORD cBytes = DRM_ID_SIZE;
+	DRM_RESULT dr = DRM_B64_DecodeW( &f_pdstrB64, &cBytes, getmBytes(), 0 );
+	if ( dr != DRM_SUCCESS )
+	{
+		fprintf(stderr, "\n[keyDecode] DRM_B64_DecodeW Failed");
+	}
+	return dr;
+}
+
+void KeyId::setKeyIdOrder(KeyIdOrder keyOrder)
+{
+    keyIdOrder = keyOrder;
+}
+
+KeyId::KeyIdOrder KeyId::getKeyIdOrder()
+{
+    return keyIdOrder;
+}
+
+const DRM_BYTE* KeyId::getmBytes()
+{
+    return m_bytes;
+}
+
+KeyId& KeyId::ToggleFormat()
+{
+    DRM_BYTE tmp;
+
+    if ( keyIdOrder != KEYID_ORDER_UNKNOWN )
+    {
+        tmp = m_bytes[3];
+        m_bytes[3] = m_bytes[0];
+        m_bytes[0] = tmp;
+        tmp = m_bytes[2];
+        m_bytes[2] = m_bytes[1];
+        m_bytes[1] = tmp;
+        tmp = m_bytes[5];
+        m_bytes[5] = m_bytes[4];
+        m_bytes[4] = tmp;
+        tmp = m_bytes[7];
+        m_bytes[7] = m_bytes[6];
+        m_bytes[6] = tmp;
+
+        if ( keyIdOrder == KEYID_ORDER_GUID_LE )
+            keyIdOrder = KEYID_ORDER_UUID_BE;
+        else
+            keyIdOrder = KEYID_ORDER_GUID_LE;
+    }
+    m_hexStr.clear();
+    m_base64Str.clear();
+
+    return *this;
+}
+
+bool KeyId::operator< ( const KeyId &keyId ) const
+{
+    if ( memcmp(keyId.m_bytes, m_bytes, DRM_ID_SIZE) < 0 )
+        return true;
+    return false;
+}
+
+bool KeyId::operator== ( const KeyId &keyId )
+{
+    bool areEqual = false;
+
+    if ( memcmp(&m_bytes[8], &(keyId.m_bytes[8]), 8) == 0 )
+    {
+        if ( memcmp(keyId.m_bytes, m_bytes, 8) == 0 )
+        {
+            areEqual = true;
+        }
+        else
+        {
+            ToggleFormat();
+            areEqual = ( memcmp(keyId.m_bytes, m_bytes, DRM_ID_SIZE ) == 0 );
+            ToggleFormat();
+        }
+    }
+
+    return areEqual;
+}
+
+const char* KeyId::HexStr()
+{
+    if ( m_hexStr.empty() )
+    {
+        char hex[64];
+        ::memset(hex, 0, 64);
+        for (int i = 0; i < DRM_ID_SIZE; i++)
+        {
+            hex[i * 2] = "0123456789abcdef"[m_bytes[i] >> 4];
+            hex[i * 2 + 1] = "0123456789abcdef"[m_bytes[i] & 0x0F];
+        }
+        m_hexStr = hex;
+    }
+
+    return m_hexStr.c_str();
+}
+
+const char* KeyId::B64Str()
+{
+    DRM_RESULT dr = DRM_SUCCESS;
+    if ( m_base64Str.empty() )
+    {
+        char b64[64];
+        DRM_DWORD cbB64 = 64;
+        ::memset( b64, 0, 64 );
+        PR4ChkDR( DRM_B64_EncodeA( m_bytes, DRM_ID_SIZE, b64, &cbB64, 0 ) );
+
+        m_base64Str = b64;
+    }
+
+    ErrorExit:
+
+    return m_base64Str.c_str();
+}
+
 namespace CDMi {
 
 const DRM_CONST_STRING *g_rgpdstrRights[1] = {&g_dstrDRM_RIGHT_PLAYBACK};
