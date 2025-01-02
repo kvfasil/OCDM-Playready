@@ -549,9 +549,7 @@ ErrorExit:
 }
 
 MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_APP_CONTEXT * poAppContext, bool initiateChallengeGeneration /* = false */)
-    : /* m_pbOpaqueBuffer(nullptr)
-    , m_cbOpaqueBuffer(0)
-    , */ m_pbRevocationBuffer(nullptr)
+    : m_pbRevocationBuffer(nullptr)
     , m_eKeyState(KEY_INIT)
     , m_pbChallenge(nullptr)
     , m_cbChallenge(0)
@@ -559,14 +557,22 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
     , m_customData(reinterpret_cast<const char*>(f_pbCDMData), f_cbCDMData)
     , m_piCallback(nullptr)
     , mSessionId(0)
-    , m_fCommit(FALSE)
     , mInitiateChallengeGeneration(initiateChallengeGeneration)
-    , m_poAppContext(poAppContext)
+    , m_cHeaderKIDs(0)
+    , m_pdstrHeaderKIDs( nullptr )
+    , m_eHeaderVersion( DRM_HEADER_VERSION_UNKNOWN )
+    , m_oBatchID( DRM_ID_EMPTY )
+//    , m_currentDecryptContext( nullptr )        //RTK
     , m_oDecryptContext(nullptr)
     , m_oDecryptContext2(nullptr)
-    , m_decryptInited(false)
-    , m_pSVPContext(NULL)
+#ifdef USE_SVP
+    , m_pSVPContext(nullptr)
     , m_rpcID(0)
+#endif
+    , m_fCommit(FALSE)
+    , m_poAppContext(poAppContext)
+    , m_decryptInited(false)
+    , m_bDRMInitializedLocally(false)
 {
    memset(&levels_, 0, sizeof(levels_));          //need to comment later.
 
