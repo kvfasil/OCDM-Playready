@@ -553,7 +553,7 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
     , m_eKeyState(KEY_INIT)
     , m_pbChallenge(nullptr)
     , m_cbChallenge(0)
-    , m_pchSilentURL(nullptr)
+    , m_pchSilentURL(nullptr) 
     , m_customData(reinterpret_cast<const char*>(f_pbCDMData), f_cbCDMData)
     , m_piCallback(nullptr)
     , mSessionId(0)
@@ -585,16 +585,6 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
    ocdm_log("Initializing SVP context for client side\n");
    gst_svp_ext_get_context(&m_pSVPContext, Client, m_rpcID);
 
-   if (!initiateChallengeGeneration) {
-      fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
-      mLicenseResponse = std::unique_ptr<LicenseResponse>(new LicenseResponse());
-      mSecureStopId.clear();
-
-      // TODO: can we do this nicer?
-      mDrmHeader.resize(f_cbCDMData);
-      memcpy(&mDrmHeader[0], f_pbCDMData, f_cbCDMData);
-      m_secCount++;
-   } else {
       fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
       m_oDecryptContext = new DRM_DECRYPT_CONTEXT;
       memset(m_oDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
@@ -705,7 +695,6 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
       ChkBOOL(m_eKeyState == KEY_INIT, DRM_E_INVALIDARG);
       m_secCount++;
       return;
-   }
 
 ErrorExit:
   if (DRM_FAILED(dr)) {
