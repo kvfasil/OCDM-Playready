@@ -196,6 +196,30 @@ const char* KeyId::B64Str()
 
 namespace CDMi {
 
+namespace {
+void Swap(uint8_t& lhs, uint8_t& rhs)
+{
+    uint8_t tmp =lhs;
+    lhs = rhs;
+    rhs = tmp;
+}
+}
+
+/*
+DRM_INIT_CONTEXT g_oDrmInitContext = { "/opt/drm", "/opt/drm/sample.hds" };
+
+const DRM_WCHAR g_rgwchCDMDrmStoreName[] = {WCHAR_CAST('/'), WCHAR_CAST('o'), WCHAR_CAST('p'), WCHAR_CAST('t'), WCHAR_CAST('/'),
+                                            WCHAR_CAST('d'), WCHAR_CAST('r'), WCHAR_CAST('m'), WCHAR_CAST('/'), WCHAR_CAST('s'),
+                                            WCHAR_CAST('a'), WCHAR_CAST('m'), WCHAR_CAST('p'), WCHAR_CAST('l'), WCHAR_CAST('e'),
+                                            WCHAR_CAST('.'), WCHAR_CAST('h'), WCHAR_CAST('d'), WCHAR_CAST('s'), WCHAR_CAST('\0')};
+
+const DRM_WCHAR g_rgwchCDMDrmPath[] = {WCHAR_CAST('/'), WCHAR_CAST('o'), WCHAR_CAST('p'), WCHAR_CAST('t'), WCHAR_CAST('/'),
+                                       WCHAR_CAST('d'), WCHAR_CAST('r'), WCHAR_CAST('m'), WCHAR_CAST('\0')};
+
+const DRM_CONST_STRING g_dstrCDMDrmStoreName = CREATE_DRM_STRING(g_rgwchCDMDrmStoreName);
+const DRM_CONST_STRING g_dstrCDMDrmPath = CREATE_DRM_STRING(g_rgwchCDMDrmPath);
+*/
+
 const DRM_CONST_STRING *g_rgpdstrRights[1] = {&g_dstrDRM_RIGHT_PLAYBACK};
 
 DRM_DWORD CPRDrmPlatform::m_dwInitRefCount = 0;
@@ -525,9 +549,9 @@ ErrorExit:
 }
 
 MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_APP_CONTEXT * poAppContext, bool initiateChallengeGeneration /* = false */)
-    : m_pbOpaqueBuffer(nullptr)
+    : /* m_pbOpaqueBuffer(nullptr)
     , m_cbOpaqueBuffer(0)
-    , m_pbRevocationBuffer(nullptr)
+    , */ m_pbRevocationBuffer(nullptr)
     , m_eKeyState(KEY_INIT)
     , m_pbChallenge(nullptr)
     , m_cbChallenge(0)
@@ -642,6 +666,34 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
       //temporary hack to allow time based licenses
       ( DRM_REINTERPRET_CAST( DRM_APP_CONTEXT_INTERNAL, m_poAppContext ) )->fClockSet = TRUE;
 #endif
+
+  DRM_CONST_DSTR_FROM_PB( &dstrWRMHEADER, &mDrmHeader[ 0 ], mDrmHeader.size() );
+
+  ChkDR( Header_GetInfo( &dstrWRMHEADER,
+                                     &m_eHeaderVersion,
+                                     &m_pdstrHeaderKIDs,
+                                     &m_cHeaderKIDs ) );
+
+      for( DRM_DWORD idx = 0; idx < m_cHeaderKIDs; idx++ )
+      {
+          KeyId kid , kid2;
+          DRM_DWORD cBytes = DRM_ID_SIZE;
+          DRM_DWORD cBytes2 = DRM_ID_SIZE;
+
+          DRM_RESULT dr = DRM_B64_DecodeW( &m_pdstrHeaderKIDs[ idx ], &cBytes, kid.getmBytes(), 0 );
+          if ( dr == DRM_SUCCESS )
+          {
+            kid.setKeyIdOrder(KeyId::KEYID_ORDER_GUID_LE);
+          }  
+
+          DRM_RESULT dr2 = DRM_B64_DecodeW( &m_pdstrHeaderKIDs[ idx ], &cBytes2, kid2.getmBytes(), 0 );
+          if ( dr2 == DRM_SUCCESS )
+          {
+            kid2.setKeyIdOrder(KeyId::KEYID_ORDER_GUID_LE);
+          }
+      }
+
+  m_eKeyState = KEY_INIT;
 
       // The current state MUST be KEY_INIT otherwise error out.
       ChkBOOL(m_eKeyState == KEY_INIT, DRM_E_INVALIDARG);
