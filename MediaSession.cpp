@@ -663,33 +663,33 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
       ( DRM_REINTERPRET_CAST( DRM_APP_CONTEXT_INTERNAL, m_poAppContext ) )->fClockSet = TRUE;
 #endif
 
-  DRM_CONST_DSTR_FROM_PB( &dstrWRMHEADER, &mDrmHeader[ 0 ], mDrmHeader.size() );
+  // DRM_CONST_DSTR_FROM_PB( &dstrWRMHEADER, &mDrmHeader[ 0 ], mDrmHeader.size() );
 
-  ChkDR( Header_GetInfo( &dstrWRMHEADER,
-                                     &m_eHeaderVersion,
-                                     &m_pdstrHeaderKIDs,
-                                     &m_cHeaderKIDs ) );
+  // ChkDR( Header_GetInfo( &dstrWRMHEADER,
+  //                                    &m_eHeaderVersion,
+  //                                    &m_pdstrHeaderKIDs,
+  //                                    &m_cHeaderKIDs ) );
 
-      for( DRM_DWORD idx = 0; idx < m_cHeaderKIDs; idx++ )
-      {
-          KeyId kid , kid2;
-          DRM_DWORD cBytes = DRM_ID_SIZE;
-          DRM_DWORD cBytes2 = DRM_ID_SIZE;
+  //     for( DRM_DWORD idx = 0; idx < m_cHeaderKIDs; idx++ )
+  //     {
+  //         KeyId kid , kid2;
+  //         DRM_DWORD cBytes = DRM_ID_SIZE;
+  //         DRM_DWORD cBytes2 = DRM_ID_SIZE;
 
-          DRM_RESULT dr = DRM_B64_DecodeW( &m_pdstrHeaderKIDs[ idx ], &cBytes, kid.getmBytes(), 0 );
-          if ( dr == DRM_SUCCESS )
-          {
-            kid.setKeyIdOrder(KeyId::KEYID_ORDER_GUID_LE);
-          }  
+  //         DRM_RESULT dr = DRM_B64_DecodeW( &m_pdstrHeaderKIDs[ idx ], &cBytes, kid.getmBytes(), 0 );
+  //         if ( dr == DRM_SUCCESS )
+  //         {
+  //           kid.setKeyIdOrder(KeyId::KEYID_ORDER_GUID_LE);
+  //         }  
 
-          DRM_RESULT dr2 = DRM_B64_DecodeW( &m_pdstrHeaderKIDs[ idx ], &cBytes2, kid2.getmBytes(), 0 );
-          if ( dr2 == DRM_SUCCESS )
-          {
-            kid2.setKeyIdOrder(KeyId::KEYID_ORDER_GUID_LE);
-          }
-      }
+  //         DRM_RESULT dr2 = DRM_B64_DecodeW( &m_pdstrHeaderKIDs[ idx ], &cBytes2, kid2.getmBytes(), 0 );
+  //         if ( dr2 == DRM_SUCCESS )
+  //         {
+  //           kid2.setKeyIdOrder(KeyId::KEYID_ORDER_GUID_LE);
+  //         }
+  //     }
 
-  m_eKeyState = KEY_INIT;
+  // m_eKeyState = KEY_INIT;
 
       // The current state MUST be KEY_INIT otherwise error out.
       ChkBOOL(m_eKeyState == KEY_INIT, DRM_E_INVALIDARG);
