@@ -49,7 +49,7 @@
 using namespace std;
 
 extern DRM_CONST_STRING g_dstrDrmPath;
-DRM_CONST_STRING g_dstrCDMDrmStoreName;                 //AML
+DRM_CONST_STRING g_dstrCDMDrmStoreName;
 
 DRM_VOID *m_drmOemContext;
 using SafeCriticalSection = WPEFramework::Core::SafeSyncType<WPEFramework::Core::CriticalSection>;
@@ -494,13 +494,11 @@ public:
         // Store store location
         std::string store(m_storeLocation);
 
-        drmStore_.pwszString = createDrmWchar(store);
-        drmStore_.cchString = store.length();
+        drmStore_.pwszString = createDrmWchar(store); //AML
+        drmStore_.cchString = store.length();         //AML
 
-#ifdef AML_SVP_PR
         g_dstrCDMDrmStoreName.pwszString = createDrmWchar(store);
         g_dstrCDMDrmStoreName.cchString = store.length();
-#endif
 
         // Init revocation buffer.
         pbRevocationBuffer_ = new DRM_BYTE[REVOCATION_BUFFER_SIZE];
@@ -653,6 +651,7 @@ public:
         delete [] pbRevocationBuffer_;
 
         delete [] drmdir_;
+        delete [] g_dstrCDMDrmStoreName.pwszString;
         delete [] drmStore_.pwszString;
 
         err = CPRDrmPlatform::DrmPlatformUninitialize();
