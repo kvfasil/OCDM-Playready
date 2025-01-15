@@ -738,34 +738,25 @@ public:
     void OnSystemConfigurationAvailable(const WPEFramework::PluginHost::IShell * shell, const std::string& configline)
     {
 
-#ifdef AML_SVP_PR
-        string persistentPath = shell->PersistentPath();
-        string statePath = persistentPath + "state"; // To store rollback clock state etc
-        string storePath = persistentPath + "playready/storage";
-        m_readDir = persistentPath + "playready";
-        m_storeLocation = persistentPath + "playready/storage/drmstore";
-
-        WPEFramework::Core::Directory storeDir(storePath.c_str());
-        storeDir.CreatePath();
-        WPEFramework::Core::Directory stateDir(statePath.c_str());
-        stateDir.Create();
-#else
-
         Config config;
         config.FromString(configline);
         m_readDir = config.ReadDir.Value();
         m_storeLocation = config.StoreLocation.Value();
-        m_storeLocation = "/opt/drm/sample.hds";
-        string statePath = config.HomePath.Value().c_str();
-#endif
-        fprintf(stderr,"#COMMON-OCDM# %s: %s: %d\n", statePath.c_str(),storePath.c_str(),__LINE__);
-        fprintf(stderr,"#COMMON-OCDM# %s: %s: %d\n", m_readDir.c_str(),m_storeLocation.c_str(),__LINE__);
 
-        if(!statePath.empty()) {
-            WPEFramework::Core::SystemInfo::SetEnvironment(_T("HOME"), statePath);
+        // svpGetDrmStoragePath(m_readDir, m_storeLocation);
+        m_readDir = "/opt/persistent/rdkservices/OCDM/playready/";
+        m_storeLocation = "/opt/persistent/rdkservices/OCDM/playready/storage/drmstore";
+
+        WPEFramework::Core::Directory(m_readDir.c_str()).CreatePath();
+
+        string homePath = config.HomePath.Value();
+        if(!homePath.empty()) {
+            WPEFramework::Core::SystemInfo::SetEnvironment(_T("HOME"), homePath.c_str());
         } else {
-            fprintf(stderr, "[%s:%d] Error: could not set HOME variable. SecureStop functionality may not work!",__FUNCTION__,__LINE__);
+            fprintf(stderr, "[%s:%d] Error: could not set HOME variable. SecureStop functionality may not work!\n",__FUNCTION__,__LINE__);
         }
+
+        fprintf(stderr,"#COMMON-OCDM# %s: %s: %d\n", m_readDir.c_str(),m_storeLocation.c_str(),__LINE__);
 
         CreateSystemExt();
 
