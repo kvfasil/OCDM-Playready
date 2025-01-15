@@ -510,6 +510,7 @@ public:
     CDMi_RESULT InitializeAppCtx()
     {
         DRM_BYTE *appOpaqueBuffer = nullptr;
+        DRM_VOID *pDrmOemContext = NULL;
 
         if (m_poAppContext.get() != nullptr) {
            m_poAppContext.reset();
@@ -523,28 +524,30 @@ public:
         appContextOpaqueBuffer_ = appOpaqueBuffer;
 
         ::memset(m_poAppContext.get(), 0, sizeof(DRM_APP_CONTEXT));
-        DRM_RESULT err  = Drm_Initialize(m_poAppContext.get(), nullptr,
+
+        // svpGetDrmOEMContext(&pDrmOemContext);
+        DRM_RESULT err  = Drm_Initialize(m_poAppContext.get(), pDrmOemContext,
                               appOpaqueBuffer,
                               MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE,
-                              &drmStore_);
+                              &g_dstrCDMDrmStoreName);
 
-        if(err != DRM_SUCCESS) {
-            err = Drm_Initialize(m_poAppContext.get(), nullptr,
+        if((err == DRM_E_SECURESTOP_STORE_CORRUPT) || \
+                (err == DRM_E_SECURESTORE_CORRUPT) || \
+                (err == DRM_E_DST_CORRUPTED)) {
+
+            //if drmstore file is corrupted, remove it and init again, playready will create a new one
+            remove(GetDrmStorePath().c_str());
+
+            err = Drm_Initialize(m_poAppContext.get(), pDrmOemContext,
                                 appOpaqueBuffer,
                                 MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE,
-                                &drmStore_ );
-            if ( err != DRM_SUCCESS )
-            {
-                fprintf(stderr, "[%s:%d] Drm_Initialize failed. 0x%X - %s",__FUNCTION__,__LINE__,err,DRM_ERR_NAME(err));
-                int status = remove(GetDrmStorePath().c_str());
-                if(status == 0)
-                    fprintf(stderr," sample.hds File removal successful");
-                else
-                    fprintf(stderr,"sample.hds File removal not successful");
-                m_poAppContext.reset();
-                delete [] appOpaqueBuffer;
-                return CDMi_S_FALSE;
-            }
+                                &g_dstrCDMDrmStoreName );
+        }
+
+        if (DRM_FAILED(err)) {
+            delete [] appOpaqueBuffer;
+            m_poAppContext.reset();
+            return CDMi_S_FALSE;
         }
 
         ::memset(pbRevocationBuffer_, 0, REVOCATION_BUFFER_SIZE);
