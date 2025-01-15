@@ -967,19 +967,8 @@ CDMi_RESULT MediaKeySession::Close(void) {
             SAFE_OEM_FREE(m_pbRevocationBuffer);
             m_pbRevocationBuffer = nullptr;
         }
-#ifndef REUSE_APPCONTEXT
-        if (m_poAppContext != nullptr) {
-            Drm_Uninitialize(m_poAppContext);
-            SAFE_OEM_FREE(m_poAppContext);
-            m_poAppContext = nullptr;
-        }
-#endif
-        if (m_pbOpaqueBuffer != nullptr) {
-            SAFE_OEM_FREE(m_pbOpaqueBuffer);
-            m_pbOpaqueBuffer = nullptr;
-        }
 
-        if (m_oDecryptContext != nullptr) {
+	if (m_oDecryptContext != nullptr) {
             Drm_Reader_Close(m_oDecryptContext);
             delete m_oDecryptContext;
             m_oDecryptContext = nullptr;
