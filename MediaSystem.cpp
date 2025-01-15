@@ -26,13 +26,14 @@
 
 #ifdef AML_SVP_PR
 #include <interfaces/IDRM.h>
+#include <plugins/plugins.h>
 #else
 #include <cdmi.h>
 #endif
 
 #include <core/core.h>
+
 #include <drmint64.h>
-#include <plugins/plugins.h>
 
 #define CLEAN_ON_INIT 1
 
@@ -49,8 +50,8 @@ using namespace std;
 
 extern DRM_CONST_STRING g_dstrDrmPath;
 DRM_CONST_STRING g_dstrCDMDrmStoreName;                 //AML
-DRM_VOID *m_drmOemContext;
 
+DRM_VOID *m_drmOemContext;
 using SafeCriticalSection = WPEFramework::Core::SafeSyncType<WPEFramework::Core::CriticalSection>;
 
 WPEFramework::Core::CriticalSection drmAppContextMutex_;
@@ -65,12 +66,12 @@ static DRM_WCHAR* createDrmWchar(std::string const& s) {
 
 static void PackedCharsToNative(DRM_CHAR *f_pPackedString, DRM_DWORD f_cch) {
     DRM_DWORD ich = 0;
-
-    if ( f_pPackedString == nullptr || f_cch == 0 )
+    if( f_pPackedString == nullptr
+     || f_cch == 0 )
     {
         return;
     }
-    for ( ich = 1; ich <= f_cch; ich++ )
+    for( ich = 1; ich <= f_cch; ich++ )
     {
         f_pPackedString[f_cch - ich] = ((DRM_BYTE*)f_pPackedString)[ f_cch - ich ];
     }
@@ -111,7 +112,6 @@ private:
         CDMi_RESULT SetSecureStopPublisherCert( const DRM_BYTE*, DRM_DWORD  );
     };
 
-
 private:
     PlayReady (const PlayReady&) = delete;
     PlayReady& operator= (const PlayReady&) = delete;
@@ -125,6 +125,7 @@ private:
     }
 
 public:
+
     PlayReady() :
        m_poAppContext(nullptr) {
     }
@@ -143,14 +144,12 @@ public:
         int32_t licenseType,
         const char *f_pwszInitDataType,
         const uint8_t *f_pbInitData,
-        uint32_t f_cbInitData,
+        uint32_t f_cbInitData, 
         const uint8_t *f_pbCDMData,
-        uint32_t f_cbCDMData,
+        uint32_t f_cbCDMData, 
         IMediaKeySession **f_ppiMediaKeySession) {
-
         bool isNetflixPlayready = (strstr(keySystem.c_str(), "netflix") != nullptr);
         if (isNetflixPlayready) {
-            // TODO: why is the order different when dealing with netflix?
             if(!m_isAppCtxInitialized)
             {
                 InitializeAppCtx();
@@ -161,9 +160,9 @@ public:
             *f_ppiMediaKeySession = new CDMi::MediaKeySession(f_pbInitData, f_cbInitData,  m_poAppContext.get(), !isNetflixPlayready);
 #endif
         } else {
-           *f_ppiMediaKeySession = new CDMi::MediaKeySession(f_pbInitData, f_cbInitData, f_pbCDMData, f_cbCDMData, m_poAppContext.get(), !isNetflixPlayready);
+            *f_ppiMediaKeySession = new CDMi::MediaKeySession(f_pbInitData, f_cbInitData, f_pbCDMData, f_cbCDMData, m_poAppContext.get(), !isNetflixPlayready);
         }
-        return CDMi_SUCCESS;
+        return CDMi_SUCCESS; 
     }
 
     CDMi_RESULT SetSecureStopPublisherCert( const DRM_BYTE *f_pbPublisherCert, DRM_DWORD f_cbPublisherCert )
@@ -194,6 +193,21 @@ public:
         return CDMi_S_FALSE;
     }
 
+    std::string GetDrmStorePath()
+    {
+        const uint32_t MAXLEN = 256;
+        char pathStr[MAXLEN];
+        if (drmStore_.cchString >= MAXLEN)
+            return "";
+        DRM_UTL_DemoteUNICODEtoASCII(drmStore_.pwszString,
+                pathStr, MAXLEN);
+        ((DRM_BYTE*)pathStr)[drmStore_.cchString] = 0;
+        PackedCharsToNative(pathStr, drmStore_.cchString + 1);
+
+        return string(pathStr);
+    }
+
+
     CDMi_RESULT SetServerCertificate( const uint8_t *f_pbServerCertificate, uint32_t f_cbServerCertificate)
     {
         CDMi_RESULT cr = CDMi_SUCCESS;
@@ -212,7 +226,6 @@ public:
     CDMi_RESULT DestroyMediaKeySession(IMediaKeySession *f_piMediaKeySession) {
         SafeCriticalSection systemLock(drmAppContextMutex_);
         MediaKeySession * mediaKeySession = dynamic_cast<MediaKeySession *>(f_piMediaKeySession);
-
         if ( mediaKeySession != nullptr )
         {
             delete f_piMediaKeySession;
@@ -223,8 +236,7 @@ public:
         }
         return CDMi_SUCCESS;
     }
-
-//    uint64_t GetDrmSystemTime() const override
+    
     uint64_t GetDrmSystemTime() const /* override */
     {
         DRM_RESULT dr                        = DRM_SUCCESS;
@@ -236,6 +248,7 @@ public:
 
         dr = Drm_SecureTime_GetValue( ( DRM_APP_CONTEXT* ) m_poAppContext.get(),
                 &oftSystemTime, &eClockType );
+
         if ( dr != DRM_SUCCESS )
         {
             fprintf(stderr, "[%s:%d] Drm_SecureTime_GetValue failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
@@ -275,7 +288,6 @@ public:
         return CDMi_SUCCESS;
     }
 
-//    std::string GetVersionExt() const override
     std::string GetVersionExt() const /* override */
     {
         const uint32_t MAXLEN = 64;
@@ -289,44 +301,27 @@ public:
         return string(versionStr);
     }
 
-    std::string GetDrmStorePath()
-    {
-        const uint32_t MAXLEN = 256;
-        char pathStr[MAXLEN];
-        if (drmStore_.cchString >= MAXLEN)
-            return "";
-        DRM_UTL_DemoteUNICODEtoASCII(drmStore_.pwszString,
-                pathStr, MAXLEN);
-        ((DRM_BYTE*)pathStr)[drmStore_.cchString] = 0;
-        PackedCharsToNative(pathStr, drmStore_.cchString + 1);
-
-        return string(pathStr);
-    }
-
-//    uint32_t GetLdlSessionLimit() const override
     uint32_t GetLdlSessionLimit() const /* override */
     {
         return ( uint32_t )DRM_MAX_NONCE_COUNT_PER_SESSION;
     }
 
-//    bool IsSecureStopEnabled() override
     bool IsSecureStopEnabled() /* override */
     {
         return true;
     }
 
-//    CDMi_RESULT EnableSecureStop(bool enable) override
     CDMi_RESULT EnableSecureStop(bool enable) /* override */
     {
         return CDMi_SUCCESS;
     }
 
-//    uint32_t ResetSecureStops() override
     uint32_t ResetSecureStops() /* override */
     {
         return 0;
     }
 
+    /*Return a list of the current SecureStop sessions.*/
     CDMi_RESULT GetSecureStopIds(uint8_t ids[], uint16_t idsLength, uint32_t & count)
     {
         SafeCriticalSection lock(drmAppContextMutex_);
@@ -371,7 +366,7 @@ public:
 
         SAFE_OEM_FREE( pidSessions );
         return cr;
-            }
+    }
 
     /*Generate a SecureStop challenge to send to the server.*/
     CDMi_RESULT GetSecureStop(
@@ -496,6 +491,7 @@ public:
         g_dstrDrmPath.pwszString = drmdir_;
         g_dstrDrmPath.cchString = rdir.length();
 
+        // Store store location
         std::string store(m_storeLocation);
 
         drmStore_.pwszString = createDrmWchar(store);
@@ -506,6 +502,7 @@ public:
         g_dstrCDMDrmStoreName.cchString = store.length();
 #endif
 
+        // Init revocation buffer.
         pbRevocationBuffer_ = new DRM_BYTE[REVOCATION_BUFFER_SIZE];
 
         return CDMi_SUCCESS;
@@ -522,6 +519,7 @@ public:
 
         m_poAppContext.reset(new DRM_APP_CONTEXT);
 
+        // Init opaque buffer.
         appOpaqueBuffer = new DRM_BYTE[MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE];
 
         appContextOpaqueBuffer_ = appOpaqueBuffer;
@@ -599,6 +597,7 @@ public:
         SafeCriticalSection lock(drmAppContextMutex_);
 
 //        DRM_RESULT err = Drm_Platform_Initialize(nullptr);
+
         DRM_RESULT err = CPRDrmPlatform::DrmPlatformInitialize();
 
         if(DRM_FAILED(err))
@@ -738,6 +737,7 @@ public:
     
     void OnSystemConfigurationAvailable(const WPEFramework::PluginHost::IShell * shell, const std::string& configline)
     {
+
 #ifdef AML_SVP_PR
         string persistentPath = shell->PersistentPath();
         string statePath = persistentPath + "state"; // To store rollback clock state etc
@@ -766,6 +766,7 @@ public:
         } else {
             fprintf(stderr, "[%s:%d] Error: could not set HOME variable. SecureStop functionality may not work!",__FUNCTION__,__LINE__);
         }
+
         CreateSystemExt();
 
         InitSystemExt();
