@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 #include "MediaSession.h"
 #include <assert.h>
 #include <iostream>
@@ -36,9 +35,9 @@ MODULE_NAME_DECLARATION(BUILD_REFERENCE);
 WPEFramework::Core::CriticalSection prPlatformMutex_;
 extern Core::CriticalSection drmAppContextMutex_;
 WPEFramework::Core::CriticalSection prSessionMutex_;
+extern DRM_VOID *m_drmOemContext;
 
 extern DRM_CONST_STRING g_dstrCDMDrmStoreName;
-extern DRM_VOID *m_drmOemContext;
 
 #define NYI_KEYSYSTEM "keysystem-placeholder"
 
@@ -197,28 +196,15 @@ const char* KeyId::B64Str()
 namespace CDMi {
 
 namespace {
+
 void Swap(uint8_t& lhs, uint8_t& rhs)
 {
     uint8_t tmp =lhs;
     lhs = rhs;
     rhs = tmp;
 }
+
 }
-
-/*
-DRM_INIT_CONTEXT g_oDrmInitContext = { "/opt/drm", "/opt/drm/sample.hds" };
-
-const DRM_WCHAR g_rgwchCDMDrmStoreName[] = {WCHAR_CAST('/'), WCHAR_CAST('o'), WCHAR_CAST('p'), WCHAR_CAST('t'), WCHAR_CAST('/'),
-                                            WCHAR_CAST('d'), WCHAR_CAST('r'), WCHAR_CAST('m'), WCHAR_CAST('/'), WCHAR_CAST('s'),
-                                            WCHAR_CAST('a'), WCHAR_CAST('m'), WCHAR_CAST('p'), WCHAR_CAST('l'), WCHAR_CAST('e'),
-                                            WCHAR_CAST('.'), WCHAR_CAST('h'), WCHAR_CAST('d'), WCHAR_CAST('s'), WCHAR_CAST('\0')};
-
-const DRM_WCHAR g_rgwchCDMDrmPath[] = {WCHAR_CAST('/'), WCHAR_CAST('o'), WCHAR_CAST('p'), WCHAR_CAST('t'), WCHAR_CAST('/'),
-                                       WCHAR_CAST('d'), WCHAR_CAST('r'), WCHAR_CAST('m'), WCHAR_CAST('\0')};
-
-const DRM_CONST_STRING g_dstrCDMDrmStoreName = CREATE_DRM_STRING(g_rgwchCDMDrmStoreName);
-const DRM_CONST_STRING g_dstrCDMDrmPath = CREATE_DRM_STRING(g_rgwchCDMDrmPath);
-*/
 
 const DRM_CONST_STRING *g_rgpdstrRights[1] = {&g_dstrDRM_RIGHT_PLAYBACK};
 
@@ -227,11 +213,7 @@ DRM_DWORD CPRDrmPlatform::m_dwInitRefCount = 0;
 void * MediaKeySession::sess = NULL;
 uint32_t MediaKeySession::m_secCount = 0;
 
-// Parse out the first PlayReady initialization header found in the concatenated
-// block of headers in _initData_.
-// If a PlayReady header is found, this function returns true and the header
-// contents are stored in _output_.
-// Otherwise, returns false and _output_ is not touched.
+/*Parsing the first playready init header from _initData_. In success case the header will be stored in _output_*/
 bool parsePlayreadyInitializationData(const std::string& initData, std::string* output)
 {
     BufferReader input(reinterpret_cast<const uint8_t*>(initData.data()), initData.length());
@@ -239,23 +221,12 @@ bool parsePlayreadyInitializationData(const std::string& initData, std::string* 
     static const uint8_t playreadySystemId[] = {
       0x9A, 0x04, 0xF0, 0x79, 0x98, 0x40, 0x42, 0x86,
       0xAB, 0x92, 0xE6, 0x5B, 0xE0, 0x88, 0x5F, 0x95,
+      
     };
 
-    // one PSSH box consists of:
-    // 4 byte size of the atom, inclusive.  (0 means the rest of the buffer.)
-    // 4 byte atom type, "pssh".
-    // (optional, if size == 1) 8 byte size of the atom, inclusive.
-    // 1 byte version, value 0 or 1.  (skip if larger.)
-    // 3 byte flags, value 0.  (ignored.)
-    // 16 byte system id.
-    // (optional, if version == 1) 4 byte key ID count. (K)
-    // (optional, if version == 1) K * 16 byte key ID.
-    // 4 byte size of PSSH data, exclusive. (N)
-    // N byte PSSH data.
     while (!input.IsEOF()) {
       size_t startPosition = input.pos();
 
-      // The atom size, used for skipping.
       uint64_t atomSize;
 
       if (!input.Read4Into8(&atomSize)) {
@@ -289,26 +260,22 @@ bool parsePlayreadyInitializationData(const std::string& initData, std::string* 
 
 
       if (version > 1) {
-        // unrecognized version - skip.
         if (!input.SkipBytes(atomSize - (input.pos() - startPosition))) {
           return false;
         }
         continue;
       }
 
-      // flags
       if (!input.SkipBytes(3)) {
         return false;
       }
 
-      // system id
       std::vector<uint8_t> systemId;
       if (!input.ReadVec(&systemId, sizeof(playreadySystemId))) {
         return false;
       }
 
       if (memcmp(&systemId[0], playreadySystemId, sizeof(playreadySystemId))) {
-        // skip non-Playready PSSH boxes.
         if (!input.SkipBytes(atomSize - (input.pos() - startPosition))) {
           return false;
         }
@@ -316,7 +283,6 @@ bool parsePlayreadyInitializationData(const std::string& initData, std::string* 
       }
 
       if (version == 1) {
-        // v1 has additional fields for key IDs.  We can skip them.
         uint32_t numKeyIds;
         if (!input.Read4(&numKeyIds)) {
           return false;
@@ -327,7 +293,6 @@ bool parsePlayreadyInitializationData(const std::string& initData, std::string* 
         }
       }
 
-      // size of PSSH data
       uint32_t dataLength;
       if (!input.Read4(&dataLength)) {
         return false;
@@ -341,12 +306,11 @@ bool parsePlayreadyInitializationData(const std::string& initData, std::string* 
       return true;
   }
 
-  // we did not find a matching record
   return false;
 }
 
 /*
- * f_pContext(input) : It could be NULL or Valid pointer 
+ * f_pContext(input) : It could be NULL or Valid pointer
  */
 DRM_RESULT CPRDrmPlatform::DrmPlatformInitialize( void *f_pContext )
 {
