@@ -702,12 +702,13 @@ DRM_RESULT DRM_CALL MediaKeySession::_PolicyCallback(
 }
 
 void MediaKeySession::Run(const IMediaKeySessionCallback *f_piMediaKeySessionCallback) {
-
   if (f_piMediaKeySessionCallback) {
     m_piCallback = const_cast<IMediaKeySessionCallback *>(f_piMediaKeySessionCallback);
 
     if (mInitiateChallengeGeneration) {
-      playreadyGenerateKeyRequest();
+      if ( CDMi_SUCCESS != PersistentLicenseCheck() ) {
+          playreadyGenerateKeyRequest();
+      }
     }
   } else {
       m_piCallback = nullptr;
@@ -731,7 +732,6 @@ bool MediaKeySession::playreadyGenerateKeyRequest() {
                         nullptr,
                         m_oDecryptContext);
 #endif
-
 
   ChkDR(Drm_Content_SetProperty(m_poAppContext,
                                 DRM_CSP_AUTODETECT_HEADER,
@@ -829,6 +829,162 @@ ErrorExit:
 
 CDMi_RESULT MediaKeySession::Load(void) {
   return CDMi_S_FALSE;
+}
+
+/*Set KeyId property which will be used by the Reader_Bind during license searching*/
+CDMi_RESULT MediaKeySession::SetKeyIdProperty( const DRM_WCHAR *f_rgwchEncodedKid, DRM_DWORD f_cchEncodedKid ){
+    DRM_RESULT err = Drm_Content_SetProperty(
+            m_poAppContext,
+            DRM_CSP_AUTODETECT_HEADER,
+            (DRM_BYTE*)f_rgwchEncodedKid,
+            f_cchEncodedKid * sizeof( DRM_WCHAR ) );
+
+    if (DRM_FAILED(err)) {
+        fprintf(stderr, "[%s:%d] Drm_Content_SetProperty DRM_CSP_AUTODETECT_HEADER failed. 0x%08X - %s",__FUNCTION__,__LINE__,static_cast<unsigned int>(err),DRM_ERR_NAME(err));
+        return CDMi_FAIL;
+    }
+
+    return CDMi_SUCCESS;
+}
+
+/*Converting KeyId into base64-encoded format*/
+CDMi_RESULT MediaKeySession::SetKeyIdProperty( KeyId & f_rKeyId ){
+    DRM_WCHAR rgwchEncodedKid[CCH_BASE64_EQUIV(DRM_ID_SIZE)]= {0};
+    DRM_DWORD cchEncodedKid = CCH_BASE64_EQUIV(DRM_ID_SIZE);
+
+    if ( f_rKeyId.getKeyIdOrder() == KeyId::KEYID_ORDER_UUID_BE )
+    {
+        f_rKeyId.ToggleFormat();
+    }
+
+    DRM_RESULT err = DRM_B64_EncodeW( f_rKeyId.getmBytes(), DRM_ID_SIZE,
+            rgwchEncodedKid, &cchEncodedKid, 0);
+
+    if (DRM_FAILED(err)) {
+        fprintf(stderr, "[%s:%d] DRM_B64_EncodeW failed. 0x%08X - %s",__FUNCTION__,__LINE__,static_cast<unsigned int>(err),DRM_ERR_NAME(err));
+        return CDMi_FAIL;
+    }
+    return SetKeyIdProperty( rgwchEncodedKid, cchEncodedKid );
+}
+
+/*handles all the licenses in the response using Drm_LicenseAcq_ProcessResponse().*/
+DRM_RESULT MediaKeySession::ProcessLicenseResponse(
+                DRM_PROCESS_LIC_RESPONSE_FLAG    f_eResponseFlag,
+        const   DRM_BYTE                        *f_pbResponse,
+                DRM_DWORD                        f_cbResponse,
+                DRM_LICENSE_RESPONSE            *f_pLiceneResponse ) {
+    DRM_RESULT dr = DRM_SUCCESS;
+
+    dr = Drm_LicenseAcq_ProcessResponse(
+            m_poAppContext,
+            f_eResponseFlag,
+            f_pbResponse,
+            f_cbResponse,
+            f_pLiceneResponse );
+
+    if ( dr == DRM_E_LICACQ_TOO_MANY_LICENSES )
+    {
+        DRM_DWORD cLicenses = f_pLiceneResponse->m_cAcks;
+        f_pLiceneResponse->m_pAcks = ( DRM_LICENSE_ACK * )Oem_MemAlloc( cLicenses * sizeof( DRM_LICENSE_ACK ) );
+        f_pLiceneResponse->m_cMaxAcks = cLicenses;
+
+        dr = Drm_LicenseAcq_ProcessResponse(
+                m_poAppContext,
+                f_eResponseFlag,
+                f_pbResponse,
+                f_cbResponse,
+                f_pLiceneResponse );
+    }
+    return dr;
+}
+
+CDMi_RESULT MediaKeySession::PersistentLicenseCheck() {
+#ifdef NO_PERSISTENT_LICENSE_CHECK
+    // DELIA-51437: The Webkit EME implementation used by OTT apps
+    // such as Amazon and YouTube fails when the key is usable from
+    // just the init data.  Webkit is expecting a license request
+    // message and the lack of this message prevents the session from
+    // loading correctly.
+    //
+    // The EME concept of a persistent session uses the Session Id to
+    // reload a session, not the raw Key ID.  We do not current
+    // support that type of session in the OCDM.  Apps wishing to use
+    // persistent keys should directly link to PR4 or the OCDM should
+    // be rewritten to use PR4's CDMI API
+    // (modules/cdmi/real/drmcdmireal.c).
+    fprintf(stderr, "\n PersistentLicenseCheck: skipping persistent check\n");
+    return CDMi_S_FALSE;
+#else
+    DRM_RESULT dr = DRM_SUCCESS;
+    DRM_CONTENT_SET_PROPERTY eContentPropertyType = DRM_CSP_HEADER_NOT_SET;
+
+    if ( !mDrmHeader.size() ) {
+        fprintf(stderr, "[%s:%d] mDrmHeader not set",__FUNCTION__,__LINE__);
+        return CDMi_FAIL;
+    }
+    if ( m_pdstrHeaderKIDs == NULL || m_cHeaderKIDs == 0 ){
+        fprintf(stderr, "[%s:%d] key ids not set",__FUNCTION__,__LINE__);
+        return CDMi_FAIL;
+    }
+
+    if ( m_eHeaderVersion == DRM_HEADER_VERSION_4_2 )
+        eContentPropertyType = DRM_CSP_V4_2_HEADER;
+    else if ( m_eHeaderVersion == DRM_HEADER_VERSION_4_3 )
+        eContentPropertyType = DRM_CSP_V4_3_HEADER;
+    else{
+        eContentPropertyType = DRM_CSP_AUTODETECT_HEADER;
+    }
+
+    for( DRM_DWORD idx = 0; idx < m_cHeaderKIDs; idx++ ){
+
+        KeyId keyId;
+		keyId.keyDecode(m_pdstrHeaderKIDs[ idx ]);
+        keyId.setKeyIdOrder(KeyId::KEYID_ORDER_GUID_LE);
+
+        DECRYPT_CONTEXT decryptContext;
+
+        if ( CDMi_SUCCESS != SetKeyIdProperty( m_pdstrHeaderKIDs[idx].pwszString,
+                m_pdstrHeaderKIDs[idx].cchString ) ) {
+            fprintf(stderr, "[%s:%d] SetKeyIdProperty failed. %s",__FUNCTION__,__LINE__,printGuid(keyId));
+            ChkDR( DRM_E_FAIL );
+        }
+
+        decryptContext = NEW_DECRYPT_CONTEXT();
+
+        dr = ReaderBind(
+                    g_rgpdstrRights,
+                    NO_OF(g_rgpdstrRights),
+                    _PolicyCallback,
+                    &m_playreadyLevels,
+                    &(decryptContext->oDrmDecryptContext) );
+        if ( DRM_FAILED( dr ) ){
+            ChkDR( dr );
+        }
+
+        decryptContext->keyId = keyId;
+        m_DecryptContextVector.push_back(decryptContext);
+    }
+
+ErrorExit:
+
+    if ( DRM_FAILED( dr ) ){
+        CloseDecryptContexts();
+        return CDMi_FAIL;
+    }
+
+    if ( m_piCallback )
+    {
+        for (DECRYPT_CONTEXT &p : m_DecryptContextVector)
+        {
+            m_piCallback->OnKeyStatusUpdate(MapDrToKeyMessage( dr ), p->keyId.getmBytes(), DRM_ID_SIZE);
+        }
+        m_piCallback->OnKeyStatusesUpdated();
+    }
+
+    m_eKeyState = KEY_READY;
+
+    return CDMi_SUCCESS;
+#endif
 }
 
 void MediaKeySession::SetParameter(const uint8_t * data, const uint32_t length) {
