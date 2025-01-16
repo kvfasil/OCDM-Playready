@@ -207,8 +207,8 @@ void Swap(uint8_t& lhs, uint8_t& rhs)
 
 const DRM_CONST_STRING *g_rgpdstrRights[1] = {&g_dstrDRM_RIGHT_PLAYBACK};
 
-// uint64_t MediaKeySession::mMaxResDecodePixels = 0;
-// bool MediaKeySession::mMaxResDecodeSet = false;
+uint64_t MediaKeySession::mMaxResDecodePixels = 0;
+bool MediaKeySession::mMaxResDecodeSet = false;
 
 WPEFramework::Core::CriticalSection prPlatformMutex_;
 WPEFramework::Core::CriticalSection prSessionMutex_;
@@ -570,8 +570,8 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
 
   ChkBOOL(m_eKeyState == KEY_CLOSED, DRM_E_INVALIDARG);
 
-//  mMaxResDecodePixels = 0;
-//  mMaxResDecodeSet = false;
+mMaxResDecodePixels = 0;
+mMaxResDecodeSet = false;
 
 //  if (m_poAppContext == nullptr) {     //RTK
   if (m_poAppContext) {
@@ -691,15 +691,51 @@ const char *MediaKeySession::GetKeySystem(void) const {
 }
 
 DRM_RESULT DRM_CALL MediaKeySession::_PolicyCallback(
-    const DRM_VOID *f_pvOutputLevelsData,
+    const DRM_VOID *f_pvOutputLevelsData, 
     DRM_POLICY_CALLBACK_TYPE f_dwCallbackType,
-#ifdef PR_4_4
     const DRM_KID *f_pKID,
     const DRM_LID *f_pLID,
-#endif
     const DRM_VOID *f_pv) {
-  return DRM_SUCCESS;
+    DRM_RESULT res = DRM_SUCCESS;
+
+    switch (f_dwCallbackType)
+    {
+        case DRM_PLAY_OPL_CALLBACK:
+        {
+            const DRM_PLAY_OPL_LATEST * const opl = static_cast<const DRM_PLAY_OPL_LATEST *>(f_pvOutputLevelsData);
+            assert(opl->dwVersion == VER_DRM_PLAY_OPL_LATEST);
+
+            /* MaxResDecode */
+            const DRM_DIGITAL_VIDEO_OUTPUT_PROTECTION_IDS_LATEST &dvopi = opl->dvopi;
+            assert(dvopi.dwVersion == VER_DRM_DIGITAL_VIDEO_OUTPUT_PROTECTION_IDS_LATEST);
+            for (size_t i = 0; i < dvopi.cEntries; ++i)
+            {
+                const DRM_OUTPUT_PROTECTION_LATEST &entry = dvopi.rgVop[i];
+                if (DRM_IDENTICAL_GUIDS(&entry.guidId, &g_guidMaxResDecode))
+                {
+                    assert(entry.dwVersion == VER_DRM_DIGITAL_VIDEO_OUTPUT_PROTECTION_LATEST);
+
+                    uint32_t mrdWidth = (uint32_t)(entry.rgbConfigData[0] << 24 | entry.rgbConfigData[1] << 16 | entry.rgbConfigData[2] << 8 | entry.rgbConfigData[3]);
+                    uint32_t mrdHeight = (uint32_t)(entry.rgbConfigData[4] << 24 | entry.rgbConfigData[5] << 16 | entry.rgbConfigData[6] << 8 | entry.rgbConfigData[7]);
+                    
+
+                    mMaxResDecodePixels = mrdWidth*mrdHeight;
+                    mMaxResDecodeSet = true;
+                    res = DRM_SUCCESS;
+                    break;
+                }
+            }
+            break;
+        }
+        default:
+            // ignored
+            res = DRM_SUCCESS;
+            break;
+    }
+
+    return res;
 }
+
 
 void MediaKeySession::Run(const IMediaKeySessionCallback *f_piMediaKeySessionCallback) {
   if (f_piMediaKeySessionCallback) {
@@ -1062,7 +1098,7 @@ ErrorExit:
 // clean them up when the session closes.
 void MediaKeySession::SaveTemporaryPersistentLicenses(const DRM_LICENSE_RESPONSE* f_poLicenseResponse) {
 
-    fprintf(stderr, "\n SaveTemporaryPersistentLicenses: response has persistent licenses: %s",
+    fprintf(stderr, "\n SaveTemporaryPersistentLicenses: response has persistent licenses: %s\n",
          f_poLicenseResponse->m_fHasPersistentLicenses ? "true" : "false");
 
     if (!f_poLicenseResponse->m_fHasPersistentLicenses) {
