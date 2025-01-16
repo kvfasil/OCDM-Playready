@@ -525,7 +525,7 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
     , m_pdstrHeaderKIDs( nullptr )
     , m_eHeaderVersion( DRM_HEADER_VERSION_UNKNOWN )
     , m_oBatchID( DRM_ID_EMPTY )
-//    , m_currentDecryptContext( nullptr )        //RTK
+    , m_currentDecryptContext( nullptr )        //RTK
     , m_oDecryptContext(nullptr)
     , m_oDecryptContext2(nullptr)
 #ifdef USE_SVP
@@ -540,10 +540,16 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
    fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
    memset(&levels_, 0, sizeof(levels_));          //need to comment later.
 
-   m_oDecryptContext = new DRM_DECRYPT_CONTEXT;
-   memset(m_oDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
-   m_oDecryptContext2 = new DRM_DECRYPT_CONTEXT;
-   memset(m_oDecryptContext2, 0, sizeof(DRM_DECRYPT_CONTEXT));
+//    m_oDecryptContext = new DRM_DECRYPT_CONTEXT;
+//    memset(m_oDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
+//    m_oDecryptContext2 = new DRM_DECRYPT_CONTEXT;
+//    memset(m_oDecryptContext2, 0, sizeof(DRM_DECRYPT_CONTEXT));
+
+m_currentDecryptContext = NEW_DECRYPT_CONTEXT();
+m_DecryptContextVector.push_back(m_currentDecryptContext);
+
+m_oDecryptContext = &(m_currentDecryptContext->oDrmDecryptContext);
+m_oDecryptContext2 = &(m_currentDecryptContext->oDrmDecryptAudioContext);
 
   DRM_RESULT          dr            = DRM_SUCCESS;
   DRM_ID              oSessionID    = DRM_ID_EMPTY;
@@ -1320,7 +1326,7 @@ void MediaKeySession::CloseDecryptContexts(void) {
     for (DECRYPT_CONTEXT &p : m_DecryptContextVector)
     {
         Drm_Reader_Close(&(p->oDrmDecryptContext));
-        // Drm_Reader_Close(&(p->oDrmDecryptAudioContext));
+        Drm_Reader_Close(&(p->oDrmDecryptAudioContext));
     }
     m_DecryptContextVector.clear();
 }
@@ -1350,13 +1356,13 @@ CDMi_RESULT MediaKeySession::Close(void) {
 
 	if (m_oDecryptContext != nullptr) {
             Drm_Reader_Close(m_oDecryptContext);
-            delete m_oDecryptContext;
+//            delete m_oDecryptContext;
             m_oDecryptContext = nullptr;
         }
 
         if (m_oDecryptContext2 != nullptr) {
             Drm_Reader_Close(m_oDecryptContext2);
-            delete m_oDecryptContext2;
+//            delete m_oDecryptContext2;
             m_oDecryptContext2 = nullptr;
         }
 
