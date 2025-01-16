@@ -313,11 +313,10 @@ public:
     virtual CDMi_RESULT Close(void);
     virtual CDMi_RESULT PlaybackStopped(void);
 
-    virtual void SetParameter(const uint8_t * data, const uint32_t length);
+    virtual CDMi_RESULT SetParameter(const std::string& name, const std::string& value);
     virtual const char *GetSessionId(void) const;
     virtual const char *GetKeySystem(void) const;
 //////////////////////  Decrypt  ///////////////////////////////////
-#ifdef AML_SVP_PR
 
     virtual CDMi_RESULT Decrypt(
     const uint8_t *f_pbSessionKey,
@@ -344,96 +343,6 @@ public:
     const SampleInfo*        sampleInfo,
     const IStreamProperties* properties);    
 
-/////////////////////////////////////////////////////////////////////
-#else
-
-    virtual CDMi_RESULT MediaKeySession::Decrypt(
-        uint8_t*                 inData,
-        const uint32_t           inDataLength,
-        uint8_t**                outData,
-        uint32_t*                outDataLength,
-        const SampleInfo*        sampleInfo,
-        const IStreamProperties* properties);
-#if 0
-    virtual CDMi_RESULT MediaKeySession::Decrypt(
-    const uint8_t *f_pbSessionKey,
-    uint32_t f_cbSessionKey,
-    const EncryptionScheme encryptionScheme,
-    const EncryptionPattern& pattern,
-    const uint8_t *f_pbIV,
-    uint32_t f_cbIV,
-    uint8_t* payloadData,
-    uint32_t payloadDataSize,
-    uint32_t *f_pcbOpaqueClearContent,
-    uint8_t **f_ppbOpaqueClearContent,
-    const uint8_t keyIdLength,
-    const uint8_t* f_keyId,
-    bool initWithLast15);
-#endif
-
-    virtual CDMi_RESULT MediaKeySession::DecryptAesCBC1(
-    SubSampleInfo* subSample,
-    uint8_t subSampleCount,
-    const uint8_t *f_pbIV,
-    uint32_t f_cbIV,
-    const uint8_t *payloadData,
-    uint32_t payloadDataSize,
-    uint32_t *f_pcbOpaqueClearContent,
-    uint8_t **f_ppbOpaqueClearContent,
-    const uint8_t keyIdLength,
-    const uint8_t* f_keyId,
-    uint8_t initWithLast15,
-    uint32_t cryptoBlocks,
-    uint32_t clearBlocks,
-    bool useSVP);
-
-#if 0
-    virtual CDMi_RESULT MediaKeySession::DecryptAesCBC(
-    const uint32_t *f_pdwSubSampleMapping,
-    uint32_t f_cdwSubSampleMapping,
-    const uint8_t *f_pbIV,
-    uint32_t f_cbIV,
-    const uint8_t *payloadData,
-    uint32_t payloadDataSize,
-    uint32_t *f_pcbOpaqueClearContent,
-    uint8_t **f_ppbOpaqueClearContent,
-    const uint8_t keyIdLength,
-    const uint8_t* f_keyId,
-    bool initWithLast15,
-    uint32_t cryptoBlocks,
-    uint32_t clearBlocks);
-#endif
-
-    virtual CDMi_RESULT MediaKeySession::DecryptAesCTR1(
-    SubSampleInfo* subSample,
-    uint8_t subSampleCount,
-    const uint8_t *f_pbIV,
-    uint32_t f_cbIV,
-    const uint8_t *payloadData,
-    uint32_t payloadDataSize,
-    uint32_t *f_pcbOpaqueClearContent,
-    uint8_t **f_ppbOpaqueClearContent,
-    const uint8_t keyIdLength,
-    const uint8_t* f_keyId,
-    uint8_t initWithLast15,
-    bool useSVP);
-
-#if 0
-    virtual CDMi_RESULT MediaKeySession::DecryptAesCTR(
-    const uint32_t *f_pdwSubSampleMapping,
-    uint32_t f_cdwSubSampleMapping,
-    const uint8_t *f_pbIV,
-    uint32_t f_cbIV,
-    const uint8_t *payloadData,
-    uint32_t payloadDataSize,
-    uint32_t *f_pcbOpaqueClearContent,
-    uint8_t **f_ppbOpaqueClearContent,
-    const uint8_t keyIdLength,
-    const uint8_t* f_keyId,
-    bool initWithLast15);
-#endif
-
-#endif
 //////////////////////  Decrypt  ///////////////////////////////////    
 
     virtual CDMi_RESULT ReleaseClearContent(

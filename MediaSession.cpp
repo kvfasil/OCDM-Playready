@@ -1362,8 +1362,22 @@ DECRYPT_CONTEXT MediaKeySession::GetDecryptCtx( KeyId &f_rKeyId )
     return nullptr;
 }
 
-void MediaKeySession::SetParameter(const uint8_t * data, const uint32_t length) {
-        //ocdm_log("set cbcs parameter\n");
+CDMi_RESULT MediaKeySession::SetParameter(const std::string& name, const std::string& value)
+{
+  CDMi_RESULT retVal = CDMi_S_FALSE;
+
+  if(name.find("rpcId") != std::string::npos) {
+    // Got the RPC ID for gst-svp-ext communication
+    unsigned int nID = 0;
+    nID =  (unsigned int)std::stoul(value.c_str(), nullptr, 16);
+    if(nID != 0) {
+#ifdef USE_SVP
+      //fprintf(stderr, "Initializing SVP context for client side ID = %X\n", nID);
+      gst_svp_ext_get_context(&m_pSVPContext, Client, nID);
+#endif
+    }
+  }
+  return retVal;
 }
 
    CDMi_RESULT MediaKeySession::Decrypt(
@@ -1374,6 +1388,7 @@ void MediaKeySession::SetParameter(const uint8_t * data, const uint32_t length) 
     const SampleInfo*        sampleInfo,
     const IStreamProperties* properties)
 {
+   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
     DRM_UINT64 iv_vector[2] = { 0 };
     void* pSecureToken      = nullptr;
     void *decryptedData     = nullptr;
@@ -1565,7 +1580,7 @@ CDMi_RESULT MediaKeySession::ReleaseClearContent(
     uint32_t f_cbSessionKey,
     const uint32_t  f_cbClearContentOpaque,
     uint8_t  *f_pbClearContentOpaque ) {
-
+   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
   return CDMi_SUCCESS;
 
 }
