@@ -987,6 +987,100 @@ ErrorExit:
 #endif
 }
 
+// Allow persistent PlayReady licenses to be used in a temporary
+// session.
+//
+// Ideally, the license server would only return temporary licenses
+// and would could block all persistent license with the
+// `DRM_PROCESS_LIC_RESPONSE_FLAG` value of
+// `DRM_PROCESS_LIC_RESPONSE_BLOCK_PERSISTENT_LICENSES`.
+//
+// Instead, we allow persistent licenses to be used but attempt to
+// clean them up when the session closes.
+void MediaKeySession::SaveTemporaryPersistentLicenses(const DRM_LICENSE_RESPONSE* f_poLicenseResponse) {
+
+    fprintf(stderr, "\n SaveTemporaryPersistentLicenses: response has persistent licenses: %s",
+         f_poLicenseResponse->m_fHasPersistentLicenses ? "true" : "false");
+
+    if (!f_poLicenseResponse->m_fHasPersistentLicenses) {
+        return;
+    }
+
+    // We know there are persistent license but not which ones.  Save
+    // them all for deletion when we close a session.
+    for (DRM_DWORD i = 0; i < f_poLicenseResponse->m_cAcks; ++i) {
+        const DRM_LICENSE_ACK *pLicenseAck = nullptr;
+
+        pLicenseAck = f_poLicenseResponse->m_pAcks != nullptr
+            ? &f_poLicenseResponse->m_pAcks[ i ] : &f_poLicenseResponse->m_rgoAcks[ i ];
+
+        if ( DRM_SUCCEEDED( pLicenseAck->m_dwResult ) ) {
+            m_oPersistentLicenses.emplace_back(pLicenseAck->m_oKID, pLicenseAck->m_oLID);
+        }
+    }
+}
+
+void MediaKeySession::DeleteTemporaryPersistentLicenses() {
+    DRM_RESULT dr = DRM_SUCCESS;
+    DRM_CONST_STRING          dstrKID              = DRM_EMPTY_DRM_STRING;
+    DRM_CONST_STRING          dstrLID              = DRM_EMPTY_DRM_STRING;
+    DRM_DWORD                 cbstrKID             = 0;
+    DRM_DWORD cLicDeleted = 0;
+
+    fprintf(stderr, "\n DeleteTemporaryPersistentLicenses: deleting %zd possibly persistent licenses",
+         m_oPersistentLicenses.size());
+
+    /* Allocate strKID buffer */
+    cbstrKID = CCH_BASE64_EQUIV( sizeof( DRM_ID ) ) * sizeof( DRM_WCHAR );
+    ChkMem( dstrKID.pwszString = (DRM_WCHAR *) Oem_MemAlloc( cbstrKID ) );
+    dstrKID.cchString = CCH_BASE64_EQUIV( sizeof( DRM_ID ) );
+
+    ChkMem( dstrLID.pwszString = (DRM_WCHAR *) Oem_MemAlloc( cbstrKID ) );
+    dstrLID.cchString = CCH_BASE64_EQUIV( sizeof( DRM_ID ) );
+
+    for (const auto& pair: m_oPersistentLicenses) {
+
+        /* Convert KID to string */
+        dr = DRM_B64_EncodeW(
+            (DRM_BYTE*)&pair.first,
+            sizeof( DRM_ID ),
+            (DRM_WCHAR*)dstrKID.pwszString,
+            &dstrKID.cchString,
+            DRM_BASE64_ENCODE_NO_FLAGS );
+
+        if (DRM_FAILED(dr)) {
+            fprintf(stderr, "\n DeleteTemporaryPersistentLicenses: DRM_B64_EncodeW failed for KID: 0x%08X", dr);
+            continue;
+        }
+
+        /* Convert LID to string */
+        dr = DRM_B64_EncodeW(
+            (DRM_BYTE*)&pair.second,
+            sizeof( DRM_ID ),
+            (DRM_WCHAR*)dstrLID.pwszString,
+            &dstrKID.cchString,
+            DRM_BASE64_ENCODE_NO_FLAGS );
+
+        if (DRM_FAILED(dr)) {
+            fprintf(stderr, "\n DeleteTemporaryPersistentLicenses: DRM_B64_EncodeW failed for LID: 0x%08X", dr);
+            continue;
+        }
+
+        dr = Drm_StoreMgmt_DeleteLicenses(
+            m_poAppContext,
+            &dstrKID,
+            &dstrLID,
+            &cLicDeleted);
+
+    }
+
+ErrorExit:
+    SAFE_OEM_FREE( dstrKID.pwszString );
+    SAFE_OEM_FREE( dstrLID.pwszString );
+
+    return;
+}
+
 void MediaKeySession::SetParameter(const uint8_t * data, const uint32_t length) {
         //ocdm_log("set cbcs parameter\n");
 }
