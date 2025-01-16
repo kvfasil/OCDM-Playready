@@ -352,11 +352,6 @@ DRM_RESULT CPRDrmPlatform::DrmPlatformInitialize( void *f_pContext )
 DRM_RESULT CPRDrmPlatform::DrmPlatformInitialize()
 {
     void *pPlatformInitData = NULL;
-    /* realtek, it returns DRM_INIT_CONTEXT as pPlatformInitData, 
-     * Amlogic, it would be NULL
-     * BRCM, it returns OEM_Settings as pPlatformInitData
-     */
-    // void svpGetDrmPlatformInitData( void ** ppPlatformInitData)
     // svpGetDrmPlatformInitData( &pPlatformInitData);
     return DrmPlatformInitialize( (void *)pPlatformInitData );
 }
@@ -374,8 +369,6 @@ DRM_RESULT CPRDrmPlatform::DrmPlatformUninitialize()
     }
     else if ( --m_dwInitRefCount == 0 )
     {
-        /* m_drmOemContext currently used by BRCM. AML & RTK it could be stub */
-        //void svpGetDrmOEMContext(void ** ppdrmOemContext)
         // svpGetDrmOEMContext(&m_drmOemContext);
 
         if ( DRM_FAILED( (dr=Drm_Platform_Uninitialize( (void *)m_drmOemContext ) ) ) )
@@ -431,11 +424,9 @@ PlayreadySession::PlayreadySession()
     , m_cbPROpaqueBuf(0)
     , m_bInitCalled(false)
 {
-    void *pPlatformInitData = NULL;
-  //    void svpGetDrmPlatformInitData( void ** ppPlatformInitData)
+  void *pPlatformInitData = NULL;
   //    svpGetDrmPlatformInitData( &pPlatformInitData);
 
-  //TODO
   // if ( DRM_FAILED( CPRDrmPlatform::DrmPlatformInitialize( pPlatformInitData ) ) )
   // {
   //     fprintf(stderr, "[%s:%d] DrmPlatformInitialize failed.",__FUNCTION__,__LINE__);
@@ -459,7 +450,6 @@ PlayreadySession::~PlayreadySession()
         }
     }
 
-    // TODO
     // if (DRM_FAILED(CPRDrmPlatform::DrmPlatformUninitialize()))
     // {
     //     fprintf(stderr, "[%s:%d] DrmPlatformUninitialize failed.",__FUNCTION__,__LINE__);
@@ -484,13 +474,12 @@ DRM_APP_CONTEXT * PlayreadySession::InitializeDRM(const DRM_CONST_STRING * pDRMS
         ChkMem( m_poAppContext = (DRM_APP_CONTEXT * )Oem_MemAlloc( sizeof(DRM_APP_CONTEXT) ) );
         ZEROMEM( m_poAppContext, sizeof(DRM_APP_CONTEXT) );
 
-      /* pdrmOemContext this should be valid for BRCM , others it could be null */
       // svpGetDrmOEMContext(&pdrmOemContext);
         dr = Drm_Initialize(m_poAppContext, pdrmOemContext, m_pbPROpaqueBuf, m_cbPROpaqueBuf, pDRMStoreName);
         if (dr != DRM_SUCCESS)
         {
           remove(GetDrmStorePath().c_str());
-            ChkDR(Drm_Initialize(m_poAppContext, pdrmOemContext, m_pbPROpaqueBuf, m_cbPROpaqueBuf, pDRMStoreName));
+          ChkDR(Drm_Initialize(m_poAppContext, pdrmOemContext, m_pbPROpaqueBuf, m_cbPROpaqueBuf, pDRMStoreName));
         }
   }
   else
@@ -525,9 +514,7 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
     , m_pdstrHeaderKIDs( nullptr )
     , m_eHeaderVersion( DRM_HEADER_VERSION_UNKNOWN )
     , m_oBatchID( DRM_ID_EMPTY )
-    , m_currentDecryptContext( nullptr )        //RTK
-    , m_oDecryptContext(nullptr)
-    , m_oDecryptContext2(nullptr)
+    , m_currentDecryptContext( nullptr )
 #ifdef USE_SVP
     , m_pSVPContext(nullptr)
     , m_rpcID(0)
@@ -539,17 +526,6 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
 {
    fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
    memset(&levels_, 0, sizeof(levels_));          //need to comment later.
-
-//    m_oDecryptContext = new DRM_DECRYPT_CONTEXT;
-//    memset(m_oDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
-//    m_oDecryptContext2 = new DRM_DECRYPT_CONTEXT;
-//    memset(m_oDecryptContext2, 0, sizeof(DRM_DECRYPT_CONTEXT));
-
-m_currentDecryptContext = NEW_DECRYPT_CONTEXT();
-m_DecryptContextVector.push_back(m_currentDecryptContext);
-
-m_oDecryptContext = &(m_currentDecryptContext->oDrmDecryptContext);
-m_oDecryptContext2 = &(m_currentDecryptContext->oDrmDecryptAudioContext);
 
   DRM_RESULT          dr            = DRM_SUCCESS;
   DRM_ID              oSessionID    = DRM_ID_EMPTY;
@@ -576,8 +552,8 @@ m_oDecryptContext2 = &(m_currentDecryptContext->oDrmDecryptAudioContext);
 
   ChkBOOL(m_eKeyState == KEY_CLOSED, DRM_E_INVALIDARG);
 
-mMaxResDecodePixels = 0;
-mMaxResDecodeSet = false;
+  mMaxResDecodePixels = 0;
+  mMaxResDecodeSet = false;
 
 //  if (m_poAppContext == nullptr) {     //RTK
   if (m_poAppContext) {
@@ -622,8 +598,6 @@ mMaxResDecodeSet = false;
       ( DRM_REINTERPRET_CAST( DRM_APP_CONTEXT_INTERNAL, m_poAppContext ) )->fClockSet = TRUE;
 #endif
 
-  DRM_CONST_DSTR_FROM_PB( &dstrWRMHEADER, &mDrmHeader[ 0 ], mDrmHeader.size() );
-
   ChkDR( Header_GetInfo( &dstrWRMHEADER,
                                      &m_eHeaderVersion,
                                      &m_pdstrHeaderKIDs,
@@ -662,9 +636,9 @@ ErrorExit:
   return;
 }
 
-
-
 MediaKeySession::~MediaKeySession(void) {
+    mMaxResDecodePixels = 0;
+    mMaxResDecodeSet = false;
   gst_svp_ext_free_context(m_pSVPContext);
   Close();
   if (--m_secCount == 0) {
@@ -742,7 +716,6 @@ DRM_RESULT DRM_CALL MediaKeySession::_PolicyCallback(
     return res;
 }
 
-
 void MediaKeySession::Run(const IMediaKeySessionCallback *f_piMediaKeySessionCallback) {
   if (f_piMediaKeySessionCallback) {
     m_piCallback = const_cast<IMediaKeySessionCallback *>(f_piMediaKeySessionCallback);
@@ -765,15 +738,6 @@ bool MediaKeySession::playreadyGenerateKeyRequest() {
   SAFE_OEM_FREE( m_pchSilentURL );
 
   m_cbChallenge = 0;
-
-#ifdef PR_4_4
-  dr = Drm_Reader_Bind(m_poAppContext,
-                        g_rgpdstrRights,
-                        DRM_NO_OF(g_rgpdstrRights),
-                        _PolicyCallback,
-                        nullptr,
-                        m_oDecryptContext);
-#endif
 
   ChkDR(Drm_Content_SetProperty(m_poAppContext,
                                 DRM_CSP_AUTODETECT_HEADER,
@@ -848,7 +812,7 @@ bool MediaKeySession::playreadyGenerateKeyRequest() {
 
 
   m_eKeyState = KEY_PENDING;
-   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
+
   if (m_piCallback)
      m_piCallback->OnKeyMessage((const uint8_t *) m_pbChallenge, m_cbChallenge,
                 m_pchSilentURL != NULL ? (char *)m_pchSilentURL : "" );
@@ -1017,7 +981,7 @@ CDMi_RESULT MediaKeySession::PersistentLicenseCheck() {
     // persistent keys should directly link to PR4 or the OCDM should
     // be rewritten to use PR4's CDMI API
     // (modules/cdmi/real/drmcdmireal.c).
-    fprintf(stderr, "\n PersistentLicenseCheck: skipping persistent check\n");
+    fprintf(stderr, "\n PersistentLicenseCheck: skipping persistent check");
     return CDMi_S_FALSE;
 #else
     DRM_RESULT dr = DRM_SUCCESS;
@@ -1104,7 +1068,7 @@ ErrorExit:
 // clean them up when the session closes.
 void MediaKeySession::SaveTemporaryPersistentLicenses(const DRM_LICENSE_RESPONSE* f_poLicenseResponse) {
 
-    fprintf(stderr, "\n SaveTemporaryPersistentLicenses: response has persistent licenses: %s\n",
+    fprintf(stderr, "\n SaveTemporaryPersistentLicenses: response has persistent licenses: %s",
          f_poLicenseResponse->m_fHasPersistentLicenses ? "true" : "false");
 
     if (!f_poLicenseResponse->m_fHasPersistentLicenses) {
@@ -1186,8 +1150,10 @@ ErrorExit:
     return;
 }
 
+/*processes the license response and creates decryptor for each valid ack available in the response*/
 void MediaKeySession::Update(const uint8_t *m_pbKeyMessageResponse, uint32_t  m_cbKeyMessageResponse) {
-   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
+
+
     DRM_RESULT dr = DRM_SUCCESS;
     DRM_LICENSE_RESPONSE oLicenseResponse = { eUnknownProtocol, 0 };
     DRM_LICENSE_ACK *pLicenseAck = nullptr;
@@ -1206,11 +1172,7 @@ void MediaKeySession::Update(const uint8_t *m_pbKeyMessageResponse, uint32_t  m_
 
     SaveTemporaryPersistentLicenses(&oLicenseResponse);
 
-   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
-
     for (DRM_DWORD i = 0; i < oLicenseResponse.m_cAcks; ++i) {
-
-           fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
 
         pLicenseAck = oLicenseResponse.m_pAcks != nullptr
                 ? &oLicenseResponse.m_pAcks[ i ] : &oLicenseResponse.m_rgoAcks[ i ];
@@ -1245,18 +1207,18 @@ void MediaKeySession::Update(const uint8_t *m_pbKeyMessageResponse, uint32_t  m_
                     NO_OF(g_rgpdstrRights),
                     _PolicyCallback,
                     &m_playreadyLevels,
-                    m_oDecryptContext);
+                    &(decryptContext->oDrmDecryptContext) );
 
             if ( DRM_FAILED( dr ) ){
                 fprintf(stderr, "[%s:%d] ReaderBind failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
                 goto LoopEnd;
             }
 
+            // bIsAudioNeedNonSVPContext = svpIsAudioNeedNonSVPContext();
             bIsAudioNeedNonSVPContext = true;
 
             if(bIsAudioNeedNonSVPContext)
             {
-                   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
               decryptionMode = OEM_TEE_DECRYPTION_MODE_NOT_SECURE;
               dr = Drm_Content_SetProperty(m_poAppContext,
                                       DRM_CSP_DECRYPTION_OUTPUT_MODE,
@@ -1272,7 +1234,7 @@ void MediaKeySession::Update(const uint8_t *m_pbKeyMessageResponse, uint32_t  m_
                       NO_OF(g_rgpdstrRights),
                       _PolicyCallback,
                       &m_playreadyLevels,
-                      m_oDecryptContext2);
+                      &(decryptContext->oDrmDecryptAudioContext) );
 
               if ( DRM_FAILED( dr ) ){
                   fprintf(stderr, "[%s:%d] ReaderBind failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
@@ -1317,7 +1279,8 @@ ErrorExit:
 }
 
 CDMi_RESULT MediaKeySession::Remove(void) {
-    return CDMi_S_FALSE;
+  fprintf(stderr, "[%s:%d] returning false ",__FUNCTION__,__LINE__);
+  return CDMi_S_FALSE;
 }
 
 /*Closes each DRM_DECRYPT_CONTEXT using Drm_Reader_Close()*/
@@ -1352,18 +1315,6 @@ CDMi_RESULT MediaKeySession::Close(void) {
         if (DRM_REVOCATION_IsRevocationSupported() && m_pbRevocationBuffer != nullptr) {
             SAFE_OEM_FREE(m_pbRevocationBuffer);
             m_pbRevocationBuffer = nullptr;
-        }
-
-	if (m_oDecryptContext != nullptr) {
-            Drm_Reader_Close(m_oDecryptContext);
-//            delete m_oDecryptContext;
-            m_oDecryptContext = nullptr;
-        }
-
-        if (m_oDecryptContext2 != nullptr) {
-            Drm_Reader_Close(m_oDecryptContext2);
-//            delete m_oDecryptContext2;
-            m_oDecryptContext2 = nullptr;
         }
 
         if (m_pbChallenge != nullptr) {
@@ -1470,6 +1421,7 @@ CDMi_RESULT MediaKeySession::SetParameter(const std::string& name, const std::st
     const IStreamProperties* properties)
 {
    fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
+
     DRM_UINT64 iv_vector[2] = { 0 };
     void* pSecureToken      = nullptr;
     void *decryptedData     = nullptr;
@@ -1481,7 +1433,7 @@ CDMi_RESULT MediaKeySession::SetParameter(const std::string& name, const std::st
         return CDMi_SUCCESS;
     }
 
-    if (!m_oDecryptContext) {
+    if (!&(m_currentDecryptContext->oDrmDecryptContext)) {
         ocdm_log("Error: no decrypt context (yet?)\n");
         return CDMi_S_FALSE;
     }
@@ -1501,14 +1453,14 @@ CDMi_RESULT MediaKeySession::SetParameter(const std::string& name, const std::st
 
 #ifndef PR_4_4
     if (!properties->InitLength()) {
-      err = Drm_Reader_InitDecrypt(m_oDecryptContext, nullptr, 0);
+      err = Drm_Reader_InitDecrypt(&(m_currentDecryptContext->oDrmDecryptContext), nullptr, 0);
     } else {
         // Initialize the decryption context for Cocktail packaged
         // content. This is a no-op for AES packaged content.
         if (inDataLength <= 15) {
-            err = Drm_Reader_InitDecrypt(m_oDecryptContext, (DRM_BYTE*)inData, inDataLength);
+            err = Drm_Reader_InitDecrypt(&(m_currentDecryptContext->oDrmDecryptContext), (DRM_BYTE*)inData, inDataLength);
         } else {
-            err = Drm_Reader_InitDecrypt(m_oDecryptContext, (DRM_BYTE*)(inData + inDataLength - 15), inDataLength);
+            err = Drm_Reader_InitDecrypt(&(m_currentDecryptContext->oDrmDecryptContext), (DRM_BYTE*)(inData + inDataLength - 15), inDataLength);
         }
     }
     if (DRM_FAILED(err)) {
@@ -1576,7 +1528,8 @@ CDMi_RESULT MediaKeySession::SetParameter(const std::string& name, const std::st
       }
 
       OEM_OPTEE_SetHandle(secbuf_out->secmem_handle);
-      err = Drm_Reader_DecryptMultipleOpaque(m_oDecryptContext,
+      err = Drm_Reader_DecryptMultipleOpaque(
+          &(m_currentDecryptContext->oDrmDecryptContext),
           1, iv_vector, iv_vector + 1, regionCount,
           encryptedRegions.size(), &encryptedRegions[0],
           2, regionSkip,
@@ -1616,7 +1569,7 @@ CDMi_RESULT MediaKeySession::SetParameter(const std::string& name, const std::st
       pSecureToken = NULL;
 
     } else {
-      err = Drm_Reader_DecryptMultipleOpaque(m_oDecryptContext2,
+      err = Drm_Reader_DecryptMultipleOpaque(&(m_currentDecryptContext->oDrmDecryptAudioContext),
         1, iv_vector, iv_vector + 1, regionCount,
         encryptedRegions.size(), &encryptedRegions[0],
         2, regionSkip,
@@ -1661,9 +1614,7 @@ CDMi_RESULT MediaKeySession::ReleaseClearContent(
     uint32_t f_cbSessionKey,
     const uint32_t  f_cbClearContentOpaque,
     uint8_t  *f_pbClearContentOpaque ) {
-   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
   return CDMi_SUCCESS;
-
 }
 
 }  // namespace CDMi
