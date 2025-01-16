@@ -898,6 +898,69 @@ DRM_RESULT MediaKeySession::ProcessLicenseResponse(
     return dr;
 }
 
+/*Wrapper function for Drm_Reader_Bind()*/
+DRM_RESULT MediaKeySession::ReaderBind(
+            const DRM_CONST_STRING *f_rgpdstrRights[],
+            DRM_DWORD f_cRights,
+            DRMPFNPOLICYCALLBACK  f_pfnPolicyCallback,
+            const DRM_VOID             *f_pv,
+            DRM_DECRYPT_CONTEXT *f_pDecryptContext ) {
+    DRM_RESULT dr = DRM_SUCCESS;
+    DRM_BYTE *newOpaqueBuffer = nullptr;
+
+    while( (dr=Drm_Reader_Bind(
+                    m_poAppContext,
+                    f_rgpdstrRights,
+                    f_cRights,
+                    f_pfnPolicyCallback,
+                    f_pv,
+                    f_pDecryptContext ) ) == DRM_E_BUFFERTOOSMALL ){
+                    
+
+        DRM_BYTE *pbOldBuf = nullptr;
+        DRM_DWORD cbOldBuf = 0;
+
+        if ( m_cbPROpaqueBuf == 0 )
+            m_cbPROpaqueBuf = MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;
+
+        m_cbPROpaqueBuf *= 2;
+
+        if ( m_cbPROpaqueBuf > MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE * 64 ){
+            ChkDR( DRM_E_OUTOFMEMORY );
+        }
+
+        ChkMem( newOpaqueBuffer = ( DRM_BYTE* )Oem_MemAlloc( m_cbPROpaqueBuf ) );
+
+        dr = Drm_GetOpaqueBuffer( m_poAppContext, &pbOldBuf, &cbOldBuf );
+        if ( DRM_FAILED( dr ) ){
+            fprintf(stderr, "[%s:%d] Drm_GetOpaqueBuffer failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+            SAFE_OEM_FREE( newOpaqueBuffer );
+            ChkDR( dr );
+        }
+
+        dr = Drm_ResizeOpaqueBuffer( m_poAppContext, newOpaqueBuffer, m_cbPROpaqueBuf );
+        if ( DRM_FAILED( dr ) ){
+            fprintf(stderr, "[%s:%d] Drm_ResizeOpaqueBuffer failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+            SAFE_OEM_FREE( newOpaqueBuffer );
+            ChkDR( dr );
+        }
+
+        if ( m_pbPROpaqueBuf != nullptr && m_pbPROpaqueBuf == pbOldBuf ){
+            SAFE_OEM_FREE( pbOldBuf );
+            m_pbPROpaqueBuf = newOpaqueBuffer;
+        }else{
+            SAFE_OEM_FREE( pbOldBuf );
+        }
+    }
+
+    ErrorExit:
+    if ( DRM_FAILED( dr ) ){
+        fprintf(stderr, "[%s:%d] failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+    }
+
+    return dr;
+}
+
 CDMi_RESULT MediaKeySession::PersistentLicenseCheck() {
 #ifdef NO_PERSISTENT_LICENSE_CHECK
     // DELIA-51437: The Webkit EME implementation used by OTT apps
@@ -1081,10 +1144,6 @@ ErrorExit:
     return;
 }
 
-void MediaKeySession::SetParameter(const uint8_t * data, const uint32_t length) {
-        //ocdm_log("set cbcs parameter\n");
-}
-
 void MediaKeySession::Update(const uint8_t *m_pbKeyMessageResponse, uint32_t  m_cbKeyMessageResponse) {
 
   DRM_RESULT dr = DRM_SUCCESS;
@@ -1180,6 +1239,31 @@ CDMi_RESULT MediaKeySession::Remove(void) {
     return CDMi_S_FALSE;
 }
 
+/*Closes each DRM_DECRYPT_CONTEXT using Drm_Reader_Close()*/
+void MediaKeySession::CloseDecryptContexts(void) {
+    m_currentDecryptContext = nullptr;
+    for (DECRYPT_CONTEXT &p : m_DecryptContextVector)
+    {
+        Drm_Reader_Close(&(p->oDrmDecryptContext));
+        // Drm_Reader_Close(&(p->oDrmDecryptAudioContext));
+    }
+    m_DecryptContextVector.clear();
+}
+
+void MediaKeySession::DeleteInMemoryLicenses()  {
+    DRM_ID emptyId = DRM_ID_EMPTY;
+
+    if (memcmp(&m_oBatchID, &emptyId, sizeof(DRM_ID)) == 0) {
+        return;
+    }
+    KeyId batchId(&m_oBatchID.rgb[0],KeyId::KEYID_ORDER_GUID_LE);
+
+    DRM_RESULT dr = Drm_StoreMgmt_DeleteInMemoryLicenses(m_poAppContext, &m_oBatchID);
+    if (DRM_FAILED(dr) && dr != DRM_E_NOMORE) {
+        fprintf(stderr, "[%s:%d]  Drm_StoreMgmt_DeleteInMemoryLicenses failed for batchId:%s. 0x%X - %s",__FUNCTION__,__LINE__,printUuid(batchId),dr,DRM_ERR_NAME(dr));
+    } 
+}
+
 CDMi_RESULT MediaKeySession::Close(void) {
     m_eKeyState = KEY_CLOSED;
 
@@ -1213,6 +1297,73 @@ CDMi_RESULT MediaKeySession::Close(void) {
     }
 
     return CDMi_SUCCESS;
+}
+
+CDMi_RESULT MediaKeySession::PlaybackStopped(void) {
+  return CDMi_SUCCESS;
+}
+
+const char* MediaKeySession::MapDrToKeyMessage( DRM_RESULT dr )
+{
+    switch (dr)
+    {
+    case DRM_SUCCESS:
+        return "KeyUsable";
+    case DRM_E_TEE_OUTPUT_PROTECTION_REQUIREMENTS_NOT_MET:
+    case DRM_E_TEST_OPL_MISMATCH:
+        return "KeyOutputRestricted";
+    case DRM_E_TEE_OUTPUT_PROTECTION_INSUFFICIENT_HDCP:
+        return "KeyOutputRestrictedHDCP";
+    case DRM_E_TEE_OUTPUT_PROTECTION_INSUFFICIENT_HDCP22:
+    case DRM_E_TEST_INVALID_OPL_CALLBACK:
+        return "KeyOutputRestrictedHDCP22";
+    case DRM_E_LICENSE_NOT_FOUND:
+        return "LicenseNotFound";
+    case DRM_E_LICENSE_EXPIRED:
+        return "LicenseExpired";
+    default:
+        return "KeyInternalError";
+    }
+}
+
+CDMi_RESULT MediaKeySession::DRM_DecryptFailure(DRM_RESULT dr, const uint8_t *payloadData, uint32_t *f_pcbOpaqueClearContent, uint8_t **f_ppbOpaqueClearContent)
+{
+      fprintf(stderr, "[%s:%d] playready decrypt() failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+
+      if(f_pcbOpaqueClearContent != nullptr)
+      {
+          *f_pcbOpaqueClearContent = 0;
+      }
+      if(f_ppbOpaqueClearContent != nullptr && payloadData != nullptr)
+      {
+          *f_ppbOpaqueClearContent = (uint8_t *)payloadData;
+      }
+
+      if(m_piCallback){
+          char errStr[50];
+          uint64_t errCode = (0xFFFFFFFF00000000)|(dr);
+          sprintf(errStr,"0x%llx-DecryptError",errCode);
+          m_piCallback->OnError(0, CDMi_S_FALSE, errStr);
+          m_piCallback->OnKeyStatusUpdate(MapDrToKeyMessage( dr ), nullptr, 0);
+          m_piCallback->OnKeyStatusesUpdated();
+      }
+      return CDMi_S_FALSE;  
+}
+
+DECRYPT_CONTEXT MediaKeySession::GetDecryptCtx( KeyId &f_rKeyId )
+{
+    for (DECRYPT_CONTEXT &ctx : m_DecryptContextVector)
+    {
+        if (ctx->keyId == f_rKeyId)
+        {
+            return ctx;
+        }
+    }
+    return nullptr;
+}
+
+void MediaKeySession::SetParameter(const uint8_t * data, const uint32_t length) {
+        //ocdm_log("set cbcs parameter\n");
 }
 
    CDMi_RESULT MediaKeySession::Decrypt(

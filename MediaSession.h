@@ -311,6 +311,7 @@ public:
     virtual CDMi_RESULT Remove();
 
     virtual CDMi_RESULT Close(void);
+    virtual CDMi_RESULT PlaybackStopped(void);
 
     virtual void SetParameter(const uint8_t * data, const uint32_t length);
     virtual const char *GetSessionId(void) const;
@@ -456,12 +457,12 @@ private:
     CDMi_RESULT SelectDrmHeader(DRM_APP_CONTEXT *pDrmAppCtx, const uint32_t headerLength, const uint8_t header[]);
     CDMi_RESULT SetOutputMode(DRM_APP_CONTEXT *pDrmAppCtx, DRM_DWORD dwDecryptionMode);
 
-    // std::vector< DECRYPT_CONTEXT > m_DecryptContextVector;
+    std::vector< DECRYPT_CONTEXT > m_DecryptContextVector;
 
-    // static bool mMaxResDecodeSet;
-    // static uint64_t mMaxResDecodePixels;
+    static bool mMaxResDecodeSet;
+    static uint64_t mMaxResDecodePixels;
 
-    // virtual CDMi_RESULT DRM_DecryptFailure(DRM_RESULT dr, const uint8_t *payloadData, uint32_t *f_pcbOpaqueClearContent, uint8_t **f_ppbOpaqueClearContent);
+    virtual CDMi_RESULT DRM_DecryptFailure(DRM_RESULT dr, const uint8_t *payloadData, uint32_t *f_pcbOpaqueClearContent, uint8_t **f_ppbOpaqueClearContent);
 
     // struct PlayreadyOutProtLevels m_playreadyLevels;
 
