@@ -151,10 +151,12 @@ struct __DECRYPT_CONTEXT
 {
     KeyId keyId;
     DRM_DECRYPT_CONTEXT oDrmDecryptContext;
+    DRM_DECRYPT_CONTEXT oDrmDecryptAudioContext;
 
     __DECRYPT_CONTEXT()
     {
         memset( &oDrmDecryptContext, 0, sizeof( DRM_DECRYPT_CONTEXT ) );
+        memset( &oDrmDecryptAudioContext, 0, sizeof( DRM_DECRYPT_CONTEXT ) );
     }
 };
 
@@ -373,7 +375,7 @@ private:
 
     virtual CDMi_RESULT DRM_DecryptFailure(DRM_RESULT dr, const uint8_t *payloadData, uint32_t *f_pcbOpaqueClearContent, uint8_t **f_ppbOpaqueClearContent);
 
-    // struct PlayreadyOutProtLevels m_playreadyLevels;
+    struct PlayreadyOutProtLevels m_playreadyLevels;
 
     static DRM_RESULT DRM_CALL _PolicyCallback(const DRM_VOID *, DRM_POLICY_CALLBACK_TYPE f_dwCallbackType,
         const DRM_KID *, const DRM_LID *, const DRM_VOID *);

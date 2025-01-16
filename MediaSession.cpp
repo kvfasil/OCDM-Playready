@@ -1145,93 +1145,132 @@ ErrorExit:
 }
 
 void MediaKeySession::Update(const uint8_t *m_pbKeyMessageResponse, uint32_t  m_cbKeyMessageResponse) {
+   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
+    DRM_RESULT dr = DRM_SUCCESS;
+    DRM_LICENSE_RESPONSE oLicenseResponse = { eUnknownProtocol, 0 };
+    DRM_LICENSE_ACK *pLicenseAck = nullptr;
+    DRM_DWORD decryptionMode;
+    bool bIsAudioNeedNonSVPContext;
 
-  DRM_RESULT dr = DRM_SUCCESS;
-  DRM_DWORD decryptionMode;
-  DRM_LICENSE_RESPONSE oLicenseResponse = {eUnknownProtocol, 0};
-  ChkArg(m_pbKeyMessageResponse && m_cbKeyMessageResponse > 0);
+    ChkBOOL(m_eKeyState == KEY_PENDING, DRM_E_INVALIDARG);
 
-  ChkDR(Drm_LicenseAcq_ProcessResponse(m_poAppContext,
-                                       DRM_PROCESS_LIC_RESPONSE_SIGNATURE_NOT_REQUIRED,
-#ifndef PR_4_4
-                                       nullptr,
-                                       nullptr,
-#endif
-                                       const_cast<DRM_BYTE *>(m_pbKeyMessageResponse),
-                                       m_cbKeyMessageResponse,
-                                       &oLicenseResponse));
-  decryptionMode = OEM_TEE_DECRYPTION_MODE_HANDLE;
-  dr = Drm_Content_SetProperty(m_poAppContext,
-                           DRM_CSP_DECRYPTION_OUTPUT_MODE,
-                           (const DRM_BYTE*)&decryptionMode,
-                           sizeof decryptionMode);
-  if (!DRM_SUCCEEDED(dr)) {
-      ocdm_log("Drm_Content_SetProperty() failed with %lx", dr);
-      goto ErrorExit;
-  }
+    ChkArg(m_pbKeyMessageResponse && m_cbKeyMessageResponse > 0);
 
-  dr = Drm_Reader_Bind(m_poAppContext,
-                        g_rgpdstrRights,
-                        DRM_NO_OF(g_rgpdstrRights),
-                        _PolicyCallback,
-                        nullptr,
-                        m_oDecryptContext);
-  if (!DRM_SUCCEEDED(dr)) {
-      ocdm_log("Drm_Reader_Bind() MODE_HANDLE failed with %lx", dr);
-      goto ErrorExit;
-  }
+    ChkDR( ProcessLicenseResponse(
+            DRM_PROCESS_LIC_RESPONSE_NO_FLAGS,
+            const_cast<DRM_BYTE *>(m_pbKeyMessageResponse),
+            m_cbKeyMessageResponse,
+            &oLicenseResponse ) );
 
-  decryptionMode = OEM_TEE_DECRYPTION_MODE_NOT_SECURE;
-  dr = Drm_Content_SetProperty(m_poAppContext,
-                           DRM_CSP_DECRYPTION_OUTPUT_MODE,
-                           (const DRM_BYTE*)&decryptionMode,
-                           sizeof decryptionMode);
-  if (!DRM_SUCCEEDED(dr)) {
-      ocdm_log("Drm_Content_SetProperty() failed with %lx", dr);
-      goto ErrorExit;
-  }
+    SaveTemporaryPersistentLicenses(&oLicenseResponse);
 
-  dr = Drm_Reader_Bind(m_poAppContext,
-                        g_rgpdstrRights,
-                        DRM_NO_OF(g_rgpdstrRights),
-                        _PolicyCallback,
-                        nullptr,
-                        m_oDecryptContext2);
-  if (!DRM_SUCCEEDED(dr)) {
-      ocdm_log("Drm_Reader_Bind() MODE_NOT_SECURE failed with %lx, ignore", dr);
-  }
+   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
 
-  m_eKeyState = KEY_READY;
+    for (DRM_DWORD i = 0; i < oLicenseResponse.m_cAcks; ++i) {
 
-  if (m_eKeyState == KEY_READY) {
-    if (m_piCallback) {
-      for (DRM_DWORD i = 0; i < oLicenseResponse.m_cAcks; ++i) {
-        if (DRM_SUCCEEDED(oLicenseResponse.m_rgoAcks[i].m_dwResult)) {
-            m_piCallback->OnKeyStatusUpdate("KeyUsable", oLicenseResponse.m_rgoAcks[i].m_oKID.rgb, DRM_ID_SIZE);
+           fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
+
+        pLicenseAck = oLicenseResponse.m_pAcks != nullptr
+                ? &oLicenseResponse.m_pAcks[ i ] : &oLicenseResponse.m_rgoAcks[ i ];
+
+        KeyId keyId(&pLicenseAck->m_oKID.rgb[0],KeyId::KEYID_ORDER_GUID_LE);
+
+        dr = pLicenseAck->m_dwResult;
+        if ( DRM_SUCCEEDED( dr ) ) {
+
+            DECRYPT_CONTEXT decryptContext;
+
+            if ( CDMi_SUCCESS != SetKeyIdProperty( keyId ) )
+            {
+                dr = DRM_E_FAIL;
+                goto LoopEnd;
+            }
+
+            decryptContext = NEW_DECRYPT_CONTEXT();
+
+            decryptionMode = OEM_TEE_DECRYPTION_MODE_HANDLE;
+            dr = Drm_Content_SetProperty(m_poAppContext,
+                                    DRM_CSP_DECRYPTION_OUTPUT_MODE,
+                                    (const DRM_BYTE*)&decryptionMode,
+                                    sizeof decryptionMode);
+            if (!DRM_SUCCEEDED(dr)) {
+                fprintf(stderr, "[%s:%d] Drm_Content_SetProperty() failed with %lx - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+                goto ErrorExit;
+            }
+
+            dr = ReaderBind(
+                    g_rgpdstrRights,
+                    NO_OF(g_rgpdstrRights),
+                    _PolicyCallback,
+                    &m_playreadyLevels,
+                    m_oDecryptContext);
+
+            if ( DRM_FAILED( dr ) ){
+                fprintf(stderr, "[%s:%d] ReaderBind failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+                goto LoopEnd;
+            }
+
+            bIsAudioNeedNonSVPContext = true;
+
+            if(bIsAudioNeedNonSVPContext)
+            {
+                   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
+              decryptionMode = OEM_TEE_DECRYPTION_MODE_NOT_SECURE;
+              dr = Drm_Content_SetProperty(m_poAppContext,
+                                      DRM_CSP_DECRYPTION_OUTPUT_MODE,
+                                      (const DRM_BYTE*)&decryptionMode,
+                                      sizeof decryptionMode);
+              if (!DRM_SUCCEEDED(dr)) {
+                  fprintf(stderr, "[%s:%d] Drm_Content_SetProperty() failed with %lx - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+                  goto ErrorExit;
+              }
+
+              dr = ReaderBind(
+                      g_rgpdstrRights,
+                      NO_OF(g_rgpdstrRights),
+                      _PolicyCallback,
+                      &m_playreadyLevels,
+                      m_oDecryptContext2);
+
+              if ( DRM_FAILED( dr ) ){
+                  fprintf(stderr, "[%s:%d] ReaderBind failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+                  goto LoopEnd;
+              }
+            }
+
+            decryptContext->keyId = keyId;
+
+            if ( oLicenseResponse.m_cAcks == 1 ){
+                m_currentDecryptContext = decryptContext;
+            }
+
+            m_DecryptContextVector.push_back(decryptContext);
+
+            m_eKeyState = KEY_READY;
         }
-      }
-      m_piCallback->OnKeyStatusesUpdated();
-    }
-  }
+    LoopEnd:
+        if ( m_piCallback ){
+            m_piCallback->OnKeyStatusUpdate( MapDrToKeyMessage( dr ), keyId.getmBytes(), DRM_ID_SIZE);
+        }
+    } 
 
-  return;
+    if ( m_eKeyState == KEY_READY ){
+        dr = DRM_SUCCESS;
+    }else{
+        fprintf(stderr, "[%s:%d] Could not bind to any licenses",__FUNCTION__,__LINE__);
+        dr = DRM_E_FAIL;
+    }
 
 ErrorExit:
-  if (DRM_FAILED(dr)) {
-    const DRM_CHAR* description;
-    DRM_ERR_GetErrorNameFromCode(dr, &description);
-    ocdm_log("playready error3: %s\n", description);
 
-    m_eKeyState = KEY_ERROR;
-
-    // The upper layer is blocked waiting for an update, let's wake it.
-    if (m_piCallback) {
-      for (DRM_DWORD i = 0; i < oLicenseResponse.m_cAcks; ++i) {
-        m_piCallback->OnKeyStatusUpdate("KeyError", oLicenseResponse.m_rgoAcks[i].m_oKID.rgb, DRM_ID_SIZE);
-      }
-      m_piCallback->OnKeyStatusesUpdated();
+    if (DRM_FAILED(dr)) {
+        fprintf(stderr, "[%s:%d] failed. 0x%X - %s",__FUNCTION__,__LINE__,dr,DRM_ERR_NAME(dr));
+        m_eKeyState = KEY_ERROR;
     }
-  }
+    if (m_piCallback){
+        m_piCallback->OnKeyStatusesUpdated();
+    }
+    SAFE_OEM_FREE( oLicenseResponse.m_pAcks );
   return;
 }
 
