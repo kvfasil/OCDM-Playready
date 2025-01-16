@@ -537,26 +537,36 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
     , m_decryptInited(false)
     , m_bDRMInitializedLocally(false)
 {
+   fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
    memset(&levels_, 0, sizeof(levels_));          //need to comment later.
 
-   DRM_RESULT dr = DRM_SUCCESS;
-   DRM_ID oSessionID;
-   DRM_CONST_STRING    dstrWRMHEADER = DRM_EMPTY_DRM_STRING;
-   
-   DRM_DWORD cchEncodedSessionID = SIZEOF(m_rgchSessionID);
+  DRM_RESULT          dr            = DRM_SUCCESS;
+  DRM_ID              oSessionID    = DRM_ID_EMPTY;
+  DRM_CONST_STRING    dstrWRMHEADER = DRM_EMPTY_DRM_STRING;
 
-   ocdm_log("Initializing SVP context for client side\n");
-   gst_svp_ext_get_context(&m_pSVPContext, Client, m_rpcID);
+  DRM_DWORD cchEncodedSessionID = SIZEOF(m_rgchSessionID);
 
-      fprintf(stderr,"##FASIL##  %s : %d : \n",__func__,__LINE__);
+#ifdef USE_SVP
+  gst_svp_ext_get_context(&m_pSVPContext, Client, 0);
+
+//  m_stSecureBuffInfo.bCreateSecureMemRegion = true;
+//  m_stSecureBuffInfo.SecureMemRegionSize = 512 * 1024;
+//
+//  if( 0 != svp_allocate_secure_buffers(m_pSVPContext, (void**)&m_stSecureBuffInfo, nullptr, nullptr, m_stSecureBuffInfo.SecureMemRegionSize))
+//  {
+//      fprintf(stderr, "[%s:%d]  secure memory, allocate failed [%d]",__FUNCTION__,__LINE__, m_stSecureBuffInfo.SecureMemRegionSize);
+//      m_stSecureBuffInfo.SecureMemRegionSize = 0;
+//  }
+#endif
+
       m_oDecryptContext = new DRM_DECRYPT_CONTEXT;
       memset(m_oDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
       m_oDecryptContext2 = new DRM_DECRYPT_CONTEXT;
       memset(m_oDecryptContext2, 0, sizeof(DRM_DECRYPT_CONTEXT));
 
-      // FIXME: Change the interface of this method? Not sure why the win32 bondage is still so popular.
-      std::string initData(reinterpret_cast<const char*>(f_pbInitData), f_cbInitData);
-      std::string playreadyInitData;
+
+  std::string initData(reinterpret_cast<const char*>(f_pbInitData), f_cbInitData);
+  std::string playreadyInitData;
 
 //  if (m_poAppContext == nullptr) {     //RTK
   if (m_poAppContext) {
@@ -581,17 +591,21 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
                         &cchEncodedSessionID,
                         0));
 
-      // The current state MUST be KEY_INIT otherwise error out.
-      ChkBOOL(m_eKeyState == KEY_INIT, DRM_E_INVALIDARG);
+  if (!parsePlayreadyInitializationData(initData, &playreadyInitData)) {
+      playreadyInitData = initData;
+  }
 
-      if (!parsePlayreadyInitializationData(initData, &playreadyInitData)) {
-            playreadyInitData = initData;
-      }
+  mDrmHeader.resize( playreadyInitData.size() );
+ ::memcpy( &mDrmHeader[ 0 ],
+         reinterpret_cast<const DRM_BYTE*>(playreadyInitData.data()),
+                                playreadyInitData.size() );
 
   ChkDR(Drm_Content_SetProperty(m_poAppContext,
                                 DRM_CSP_AUTODETECT_HEADER,
-                                reinterpret_cast<const DRM_BYTE*>(playreadyInitData.data()),
-                                playreadyInitData.size()));
+                                &mDrmHeader[ 0 ],
+                                mDrmHeader.size()) );
+
+  DRM_CONST_DSTR_FROM_PB( &dstrWRMHEADER, &mDrmHeader[ 0 ], mDrmHeader.size() );
 
 #ifdef PR_4_4
       //temporary hack to allow time based licenses
