@@ -769,15 +769,19 @@ bool MediaKeySession::playreadyGenerateKeyRequest() {
                                         &m_oBatchID );
   }
 
- if (dr == DRM_E_BUFFERTOOSMALL) {
-     SAFE_OEM_FREE(m_pchSilentURL);
-     ChkMem(m_pchSilentURL = (DRM_CHAR *)Oem_MemAlloc(cchSilentURL + 1));
-     ZEROMEM(m_pchSilentURL, cchSilentURL + 1);
+  if (dr == DRM_E_BUFFERTOOSMALL)
+  {
+        if (cchSilentURL > 0)
+        {
+            ChkMem( m_pchSilentURL = (DRM_CHAR * )Oem_MemAlloc(cchSilentURL + 1));
+            ZEROMEM( m_pchSilentURL, cchSilentURL + 1 );
+        }
 
-    // Allocate buffer that is sufficient to store the license acquisition
-    // challenge.
-    if (m_cbChallenge > 0)
-      ChkMem(m_pbChallenge = (DRM_BYTE *)Oem_MemAlloc(m_cbChallenge));
+        if ( m_cbChallenge > 0 )
+        {
+            ChkMem( m_pbChallenge = (DRM_BYTE * )Oem_MemAlloc( m_cbChallenge + 1 ) );
+            ZEROMEM( m_pbChallenge, m_cbChallenge + 1 );
+        }
 
     dr = DRM_SUCCESS;
   }
